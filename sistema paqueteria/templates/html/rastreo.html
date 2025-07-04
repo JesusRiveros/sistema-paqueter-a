@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Balula Express - Rastreo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Estilos externos -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/maicons.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/owl-carousel/css/owl.carousel.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/animate/animate.css') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/Balula logo.png') }}">
+
+  <!-- QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f6f5fc;
+      color: #2D2B3A;
+      padding: 2rem;
+    }
+
+    .rastreo {
+      max-width: 450px;
+      margin: auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      margin-top: 100px; /* espacio para navbar */
+    }
+
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      background-color: #6C55F9;
+      color: white;
+      border: none;
+      margin-top: 15px;
+    }
+
+    button:hover {
+      background-color: #5243c2;
+    }
+
+    #resultado {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      display: none;
+      text-align: left;
+      background-color: #e8f7e4;
+      border: 1px solid #35bb78;
+    }
+
+    #qrcode {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Barra de navegación BalulaExpress -->
+  <header>
+    <nav class="navbar navbar-expand-lg navbar-light navbar-float">
+      <div class="container">
+        <a href="{{ url_for('inicio') }}" class="navbar-brand">Balula<span class="text-primary">Express</span></a>
+
+        <button class="navbar-toggler" data-toggle="collapse" data-target="#navbarContent"
+                aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="navbar-collapse collapse" id="navbarContent">
+          <ul class="navbar-nav ml-lg-4 pt-3 pt-lg-0">
+            <li class="nav-item">
+              <a href="{{ url_for('inicio') }}" class="nav-link">Inicio</a>
+            </li>
+            <li class="nav-item active">
+              <a href="{{ url_for('rastreo') }}" class="nav-link">Rastreo</a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ url_for('index') }}" class="nav-link">Cotiza</a>
+            </li>
+          </ul>
+
+          <div class="ml-auto">
+            <a href="{{ url_for('formulario') }}" class="btn btn-outline rounded-pill">Iniciar sesión</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Contenido de rastreo -->
+  <div class="rastreo">
+    <h2>Rastrea tu paquete</h2>
+    <input type="text" id="numeroGuia" placeholder="Ingresa tu número de guía">
+    <button onclick="rastrear()">Rastrear</button>
+
+    <div id="resultado"></div>
+    <div id="qrcode"></div>
+  </div>
+
+  <!-- Scripts JS necesarios -->
+  <script>
+    // Script para leer el parámetro tracking o guia de la URL
+    window.addEventListener("DOMContentLoaded", function () {
+      const params = new URLSearchParams(window.location.search);
+      const guia = params.get("tracking") || params.get("guia");
+      if (guia) {
+        const input = document.getElementById("numeroGuia");
+        if (input) {
+          input.value = guia;
+          rastrear();
+        }
+      }
+    });
+
+    function rastrear() {
+      const guia = document.getElementById("numeroGuia").value.trim();
+      const resultado = document.getElementById("resultado");
+      const qrContainer = document.getElementById("qrcode");
+
+      resultado.style.display = "none";
+      resultado.innerHTML = "";
+      qrContainer.innerHTML = "";
+
+      if (guia === "") {
+        resultado.style.display = "block";
+        resultado.style.backgroundColor = "#ffe5e5";
+        resultado.style.border = "1px solid #ff4f4f";
+        resultado.innerText = "Por favor, ingresa un número de guía.";
+        return;
+      }
+
+      if (!/^[a-zA-Z0-9-]+$/.test(guia)) {
+        resultado.style.display = "block";
+        resultado.style.backgroundColor = "#ffe5e5";
+        resultado.style.border = "1px solid #ff4f4f";
+        resultado.innerText = "Solo se permiten letras, números y guiones.";
+        return;
+      }
+
+      resultado.style.display = "block";
+      resultado.style.backgroundColor = "#e8f7e4";
+      resultado.style.border = "1px solid #35bb78";
+      resultado.innerHTML = `
+        <strong>Número de guía:</strong> ${guia}<br>
+        Estado: En tránsito<br>
+        Última ubicación: Centro de Almacenamiento Vallejo, CDMX<br>
+        Fecha estimada de entrega: 25 de junio de 2025
+      `;
+
+ 
+    }
+  </script>
+
+  <!-- Scripts Bootstrap -->
+  <script src="{{ url_for('static', filename='js/jquery-3.5.1.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="copyright" content="MACode ID, https://macodeid.com">
+  <title>Balula Express</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/animate/animate.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/maicons.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/owl-carousel/css/owl.carousel.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+
+
+  </head>
+    <!-- O para PNG moderno -->
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/Balula logo.png') }}">
+
+
+  <body>
+
+
+
+
+    <!-- Back to top button -->
+    <div class="back-to-top"></div>
+
+    <header>
+      <nav class="navbar navbar-expand-lg navbar-light navbar-float">
+        <div class="container">
+          <a href="{{ url_for('inicio') }}" class="navbar-brand">Balula<span class="text-primary">Express</span></a>
+
+          <button class="navbar-toggler" data-toggle="collapse" data-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+
+          <div class="navbar-collapse collapse" id="navbarContent">
+            <ul class="navbar-nav ml-lg-4 pt-3 pt-lg-0">
+              <li class="nav-item active">
+                <a href="{{ url_for('inicio') }}" class="nav-link">Inicio</a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('rastreo') }}" class="nav-link">Rastreo</a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('index') }}" class="nav-link">Cotiza</a>
+              </li>
+            </ul>
+
+            <div class="ml-auto">
+              <a href="{{ url_for('formulario') }}" class="btn btn-outline rounded-pill">Iniciar sesión</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <div class="page-banner home-banner">
+        <div class="container h-100">
+          <div class="row align-items-center h-100">
+            <div class="col-lg-6 py-3 wow fadeInUp">
+              <h1 class="mb-4">¡En Balula,
+  ¡lo llevamos todo contigo hasta el final! 🚀📦</h1>
+              <p class="text-lg mb-5">Cotiza o da seguimiento a tu envio</p>
+
+              <a href="{{ url_for('index') }}" class="btn btn-outline border text-secondary">Cotizar</a>
+              <a href="{{ url_for('rastreo') }}" class="btn btn-outline border text-secondary">Rastrear</a>
+            </div>
+            <div class="col-lg-6 py-3 wow zoomIn">
+              <div class="img-place">
+                <img src="{{ url_for('static', filename='img/IMG_3924-Photoroom.png') }}" alt="">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="page-section features">
+        <div class="container">
+          <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-4 py-3 wow fadeInUp">
+              <div class="d-flex flex-row">
+                <div class="img-fluid mr-3">
+                  <img src="{{ url_for('static', filename='img/icon_pattern.svg') }}" alt="">
+                </div>
+                <div>
+                  <h5>Envíos rápidos y seguros con Balula</h5>
+                  <p>Entrega puntual, rastreo en tiempo real y atención personalizada para cada cliente.</p>
+                </div>
+              </div>
+            </div>
+    
+            <div class="col-md-6 col-lg-4 py-3 wow fadeInUp">
+              <div class="d-flex flex-row">
+                <div class="img-fluid mr-3">
+                  <img src="{{ url_for('static', filename='img/icon_pattern.svg') }}" alt="">
+                </div>
+                <div>
+                  <h5>Soluciones logísticas integrales para tu negocio</h5>
+                  <p>Balula apoya a empresas de todos los tamaños con recolección, almacenaje y distribución confiables.</p>
+                </div>
+              </div>
+            </div>
+    
+            <div class="col-md-6 col-lg-4 py-3 wow fadeInUp">
+              <div class="d-flex flex-row">
+                <div class="img-fluid mr-3">
+                  <img src="{{ url_for('static', filename='img/icon_pattern.svg') }}" alt="">
+                </div>
+                <div>
+                  <h5> Cobertura nacional garantizada con Balula</h5>
+                  <p>Llegamos a cada rincón de México con entregas eficientes, seguras y a tiempo.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+      <div class="page-section">
+        <div class="container">
+          <div class="row">
+            <div class="col-lg-6 py-3 wow zoomIn">
+              <div class="img-place text-center">
+                <img src="{{ url_for('static', filename='img/IMG_3921-Photoroom.png') }}" alt="">
+              </div>
+            </div>
+            <div class="col-lg-6 py-3 wow fadeInRight">
+              <h2 class="title-section">Somos un equipo <span class="marked">ágil y comprometido</span> en Balula</h2>
+              <div class="divider"></div>
+              <p>Ofrecemos soluciones de envío para empresas y particulares, con tecnología inteligente y un equipo enfocado en la puntualidad, el cuidado y la atención al cliente. En Balula, cada entrega es una promesa cumplida.</p>
+              <div class="img-place mb-3">
+              </div>
+              <a href="#" class="btn btn-primary">More Details</a>
+              <a href="#" class="btn btn-outline border ml-2">Success Stories</a>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+      <div class="page-section counter-section">
+        <div class="container">
+          <div class="row align-items-center text-center">
+            <div class="col-lg-4">
+              <p>Personal trabajando con nosotros</p>
+              <h2><span class="number" data-number="1000"></span></h2>
+            </div>
+            <div class="col-lg-4">
+              <p>Ganancias por año</p>
+              <h2>$<span class="number" data-number="1000000"></span></h2>
+            </div>
+            <div class="col-lg-4">
+              <p>Expancion en la republica</p>
+              <h2><span class="number" data-number="40"></span>%</h2>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+      <div class="page-section">
+        <div class="container">
+          <div class="row">
+            <div class="col-lg-6 py-3 wow fadeInLeft">
+              <h2 class="title-section">Tecnología que <span class="marked">impulsa</span> tus envíos.</h2>
+              <div class="divider"></div>
+              <p class="mb-5">Usamos sistemas avanzados de rastreo, rutas optimizadas y logística digital para que tus envíos lleguen más rápido y con total transparencia. Eficiencia y control en cada paso, estés donde estés.
+
+  </p>
+            </div>
+            <div class="col-lg-6 py-3 wow zoomIn">
+              <div class="img-place text-center">
+                <img src="{{ url_for('static', filename='img/bg_image_3.png') }}" alt="">
+              </div>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+      <div class="page-section">
+        <div class="container">
+          <div class="text-center wow fadeInUp">
+            <div class="subhead"></div>
+            <h2 class="title-section"> Mision, Vision y Valores<span class="marked"></span></h2>
+            <div class="divider mx-auto"></div>
+          </div>
+    
+          <div class="row mt-5 text-center">
+            <div class="col-lg-4 py-3 wow fadeInUp">
+              <div class="display-3"><span class="mai-shapes"></span></div>
+              <h5>Visión</h5>
+              <p>Ser la empresa líder en soluciones de logística integral, reconocida por su
+  excelencia operativa, innovación tecnológica y compromiso con la sostenibilidad,
+  ofreciendo una experiencia de envío excepcional a nuestros clientes y
+  contribuyendo a un futuro más eficiente y responsable. Aspiramos a ser la opción
+  preferida para individuos y empresas, estableciendo un nuevo estándar de calidad
+  y confiabilidad en el sector de la paquetería.
+  </p>
+            </div>
+            <div class="col-lg-4 py-3 wow fadeInUp">
+              <div class="display-3"><span class="mai-shapes"></span></div>
+              <h5>Misión</h5>
+              <p>Proporcionar soluciones de envío rápidas, seguras y confiables, utilizando
+  tecnología de vanguardia y prácticas sostenibles, para conectar a las personas y
+  las empresas de manera eficiente y transparente. Nos comprometemos a ofrecer
+  un servicio de atención al cliente excepcional, a optimizar nuestros procesos para
+  maximizar la eficiencia y la satisfacción del cliente, y a contribuir a la construcción
+  de un futuro más responsable a través de la implementación de prácticas
+  ambientales sostenibles.
+  </p>
+            </div>
+            <div class="col-lg-4 py-3 wow fadeInUp">
+              <div class="display-3"><span class="mai-shapes"></span></div>
+              <h5>Valores</h5>
+              <p>Puntualidad: Entregamos a tiempo, siempre. La rapidez es parte de nuestro compromiso. <br> Seguridad: Cuidamos cada paquete como si fuera nuestro. Tu confianza es nuestra prioridad. <br> Compromiso: Estamos para ayudarte. Nos esforzamos por ofrecer un servicio confiable y humano. <br> Innovacion: Usamos tecnología para mejorar cada envío y brindarte una experiencia moderna y eficiente. <br> Eficiencia: Optimizamos cada proceso para reducir tiempos, costos y errores.</p>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+  
+    
+      <div class="page-section bg-light">
+        <div class="container">
+          
+          <div class="owl-carousel wow fadeInUp" id="testimonials">
+            <div class="item">
+              <div class="row align-items-center">
+                <div class="col-md-6 py-3">
+                  <div class="testi-image">
+                    <img src="{{ url_for('static', filename='img/rastreo.jpg') }}" alt="">
+                  </div>
+                </div>
+                <div class="col-md-6 py-3">
+                  <div class="testi-content">
+            
+                                <h2 class="title-section">Innovacion</h2>
+              <div class="divider"></div>
+                    
+                    <p>En Balula, creemos que la innovación no es solo una ventaja, es una necesidad.
+  Por eso, integramos tecnología de última generación en cada etapa del proceso logístico.
+
+  Desde sistemas de rastreo en tiempo real, hasta algoritmos que optimizan rutas de entrega y herramientas digitales para la atención al cliente, estamos en constante evolución para brindarte un servicio más rápido, eficiente y transparente.
+  </p>
+                    <div class="entry-footer">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+    
+            <div class="item">
+              <div class="row align-items-center">
+                <div class="col-md-6 py-3">
+                  <div class="testi-image">
+                    <img src="{{ url_for('static', filename='img/ecologia.jpg') }}" alt="">
+                  </div>
+                </div>
+                <div class="col-md-6 py-3">
+                  <div class="testi-content">
+                              <h2 class="title-section">Ecologia con Balula</h2>
+                                          <div class="divider"></div>
+                    <p>En Balula, creemos que la responsabilidad empresarial va más allá de entregar paquetes a tiempo; también implica entregar un futuro más limpio. Por ello, hemos adoptado el uso de cajas ecológicas como parte fundamental de nuestras operaciones logísticas. Estas cajas están elaboradas con materiales reciclados y reciclables, lo que reduce significativamente el consumo de recursos naturales y la generación de residuos.</p>
+                    <div class="entry-footer">
+                    
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+    
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+      <div class="page-section">
+        <div class="container">
+          <div class="row align-items-center">
+            <div class="col-lg-6 py-3 wow fadeInUp">
+              <h2 class="title-section">Servicio a clientes</h2>
+              <div class="divider"></div>
+              <p>En Balula, la atención al cliente es una prioridad. Nuestro equipo está listo para asistirte con cualquier consulta sobre tus envíos, recolecciones, rastreo o cualquier otra necesidad.<br></p>
+    
+              <ul class="contact-list">
+                <li>
+                  <div class="icon"><span class="mai-map"></span></div>
+                  <div class="content">Balula Express S.A. de C.V.
+                    Av. Industria #742, Bodega 5 Col. Industrial Vallejo
+                    Alcaldía Azcapotzalco, C.P. 02300
+                    Ciudad de México, México</div>
+                </li>
+                <li>
+                  <div class="icon"><span class="mai-mail"></span></div>
+                  <div class="content"><a href="#">contacto@gmail.com</a></div>
+                </li>
+                <li>
+                  <div class="icon"><span class="mai-phone-portrait"></span></div>
+                  <div class="content"><a href="#">5570665793</a></div>
+                </li>
+              </ul>
+            </div>
+            <div class="col-lg-6 py-3 wow fadeInUp">
+              <div class="subhead"></div>
+
+              
+              <form action="#">
+                <div class="py-2">
+                  <br>
+                              <div class="divider"></div>
+                  <input type="text" class="form-control" placeholder="Nombre">
+                </div>
+                <div class="py-2">
+                  <input type="text" class="form-control" placeholder="Correo electronico">
+                </div>
+                <div class="py-2">
+                  <textarea rows="6" class="form-control" placeholder="Insertar mensaje"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary rounded-pill mt-4">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </div> <!-- .container -->
+      </div> <!-- .page-section -->
+    
+    
+      <div class="page-section client-section">
+        <div class="container-fluid">
+          <div class="row row-cols-2 row-cols-md-3 row-cols-lg-5 justify-content-center">
+            <div class="item wow zoomIn">
+              <img src="{{ url_for('static', filename='img/clients/airbnb.png') }}" alt="Airbnb">
+            </div>
+            <div class="item wow zoomIn">
+              <img src="{{ url_for('static', filename='img/clients/google.png') }}" alt="Google">
+            </div>
+            <div class="item wow zoomIn">
+              <img src="{{ url_for('static', filename='img/clients/stripe.png') }}" alt="Google">
+            </div>
+            <div class="item wow zoomIn">
+              <img src="{{ url_for('static', filename='img/clients/paypal.png') }}" alt="Google">
+
+            </div>
+            <div class="item wow zoomIn">
+              <img src="{{ url_for('static', filename='img/clients/mailchimp.png') }}" alt="Google">
+
+            </div>
+          </div>
+        </div> <!-- .container-fluid -->
+      </div> <!-- .page-section -->
+    </main>
+
+    <footer class="page-footer"> 
+      <div class="container">
+        <div class="row justify-content-center mb-5">
+          <div class="col-lg-3 py-3">
+            <h3>Balula<span class="text-primary">Express</span></h3>
+            <p>Tu mejor opcion de paqueteria</p>
+
+            <ul class="footer-menu">
+              <li><a href="#">Contacto@gmail.com</a></li>
+              <li><a href="#">5573274331</a></li>
+
+            </ul>
+          </div>
+          <div class="col-lg-3 py-3">
+            <h5>Enlaces rapidos</h5>
+            <ul class="footer-menu">
+              <li><a href="#">Rastrear envio</a></li>
+              <li><a href="#">Cotizar envio</a></li>
+              <li><a href="#">Buscar sucursal</a></li>
+              <li><a href="#">Promociones</a></li>
+              <li><a href="#">Reporte</a></li>
+            </ul>
+          </div>
+          <div class="col-lg-3 py-3">
+            <h5>Informacion de la empresa</h5>
+            <ul class="footer-menu">
+              <li><a href="#">Acerca de Balula Expres</a></li>
+              <li><a href="#">Unete a Balula Expres</a></li>
+              <li><a href="#">Eventos</a></li>
+              <li><a href="#">Sustentabilidad</a></li>
+              <li><a href="#">Innovacion</a></li>
+            </ul>
+          </div>
+          <div class="col-lg-3 py-3">
+            <h5>Contactanos</h5>
+
+            </form>
+
+            <div class="sosmed-button mt-4">
+              <a href="#"><span class="mai-logo-facebook-f"></span></a>
+              <a href="#"><span class="mai-logo-twitter"></span></a>
+              <a href="#"><span class="mai-logo-google"></span></a>
+              <a href="#"><span class="mai-logo-linkedin"></span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-sm-6 py-2">
+            <p id="copyright">&copy; 2025 <a href="https://macodeid.com/">MACode ID</a>. All rights reserved</p>
+          </div>
+          <div class="col-sm-6 py-2 text-right">
+            <div class="d-inline-block px-3">
+              <a href="#">Privacy</a>
+            </div>
+            <div class="d-inline-block px-3">
+              <a href="#">Contact Us</a>
+            </div>
+          </div>
+        </div>
+      </div> <!-- .container -->
+    </footer> <!-- .page-footer -->
+
+
+    <script src="{{ url_for('static', filename='js/jquery-3.5.1.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/wow/wow.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/owl-carousel/js/owl.carousel.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/waypoints/jquery.waypoints.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/animateNumber/jquery.animateNumber.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/google-maps.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+
+
+
+  </body>
+  </html>

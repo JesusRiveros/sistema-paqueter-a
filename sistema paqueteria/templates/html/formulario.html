@@ -1,0 +1,103 @@
+   <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+  <meta name="copyright" content="MACode ID, https://macodeid.com">
+
+  <title>Balula Express-Iniciar Sesion</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/animate/animate.css') }}">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.css') }}">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/maicons.css') }}">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/owl-carousel/css/owl.carousel.css') }}">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+
+
+  <!-- O para PNG moderno -->
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='img/Balula logo.png') }}">
+
+
+  
+  <header>
+    <nav class="navbar navbar-expand-lg navbar-light navbar-float">
+      <div class="container">
+        <a href="{{ url_for('inicio') }}" class="navbar-brand">Balula<span class="text-primary">Express</span></a>
+
+        <button class="navbar-toggler" data-toggle="collapse" data-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="navbar-collapse collapse" id="navbarContent">
+          <ul class="navbar-nav ml-lg-4 pt-3 pt-lg-0">
+            <li class="nav-item active">
+              <a href="{{ url_for('inicio') }}" class="nav-link">Inicio</a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ url_for('rastreo') }}" class="nav-link">Rastreo</a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ url_for('index') }}" class="nav-link">Cotiza</a>
+            </li>
+          </ul>
+
+          
+
+          <div class="ml-auto">
+            <br>
+            <a href="#" class="btn btn-outline rounded-pill">Iniciar sesion</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+
+</head>
+<body>
+   <div class="page-section">
+      <div class="container">
+        <div class="row align-items-center">
+          <div class="col-lg-6 py-3 wow fadeInUp">
+            <br></br>
+            <h2  class="title-section">Iniciar sesion</h2>
+            <div class="divider"></div>
+            
+
+            <form action="#">
+              <div class="py-2">
+                <br>
+                <input type="text" class="form-control" placeholder="Ingresa usuario">
+              </div>
+<div class="py-2 position-relative">
+  <input type="password" id="password" class="form-control" placeholder="Contraseña">
+  <span id="togglePassword" style="position: absolute; top: 50%; right: 15px; transform: translateY(-50%); cursor: pointer;">
+    👁️
+  </span>
+</div>
+             
+              <button type="submit" class="btn btn-primary rounded-pill mt-4">Enviar</button>
+            </form>
+          </div>
+        </div>
+      </div> <!-- .container -->
+    </div> <!-- .page-section -->
+
+    <script>
+  const togglePassword = document.getElementById('togglePassword');
+  const passwordField = document.getElementById('password');
+
+  togglePassword.addEventListener('click', function () {
+    const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+    passwordField.setAttribute('type', type);
+
+    // Cambiar el ícono (puedes reemplazarlo con un SVG o FontAwesome si deseas)
+    this.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+  });
+</script>
