@@ -1,0 +1,26 @@
+# Instalacion y ejecucion local
+# Requiere Python 3.10 o superior.
+#
+# Desde la raiz del repositorio, crea y activa un entorno virtual:
+#   Linux/macOS:
+#     python3 -m venv .venv
+#     source .venv/bin/activate
+#   Windows (PowerShell):
+#     py -m venv .venv
+#     .venv\Scripts\Activate.ps1
+#
+# Instala estas dependencias desde la raiz:
+#   python -m pip install -r requirements.txt
+#
+# Inicia la aplicacion:
+#   cd "sistema paqueteria"
+#   python app.py
+#
+# Abre en el navegador: http://127.0.0.1:5001/
+# Cotizador: http://127.0.0.1:5001/app/
+
+Flask>=3.0,<4.0
+requests>=2.31,<3.0
+fpdf2>=2.7,<3.0
+qrcode[pil]>=7.4,<9.0
+Pillow>=10.0,<13.0

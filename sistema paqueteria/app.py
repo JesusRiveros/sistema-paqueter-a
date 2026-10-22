@@ -74,7 +74,7 @@ def descomponer_direccion(direccion):
 # Ruta raíz muestra la web estática (inicio)
 @app.route('/')
 def home():
-    return render_template('html/inicio.html')
+    return render_template('html/Inicio.html')
 
 # --- Sistema paquetería bajo /app ---
 
@@ -416,7 +416,7 @@ def formulario():
 
 @app.route('/inicio')
 def inicio():
-    return render_template('html/inicio.html')
+    return render_template('html/Inicio.html')
 
 @app.route('/rastreo')
 def rastreo():
