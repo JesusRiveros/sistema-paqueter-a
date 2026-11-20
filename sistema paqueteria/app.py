@@ -9,11 +9,16 @@ import uuid
 import qrcode
 from PIL import Image
 
-PDF_FOLDER = os.path.join(os.getcwd(), 'static', 'guias')
+from dotenv import load_dotenv
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
+
+PDF_FOLDER = os.path.join(BASE_DIR, 'static', 'guias')
 os.makedirs(PDF_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
-app.secret_key = 'una_clave_super_secreta_1234'
+app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32)
 
 DISTANCIA_TARIFAS = [
     (50, 60),
@@ -33,7 +38,13 @@ BOX_COSTS = {
     'move': 40
 }
 
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY") or "AIzaSyA549SLkse93t1ZxtweOjrCUn8jfWYowdk"
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip('/')
+
+
+@app.context_processor
+def inject_config():
+    return {'google_maps_api_key': GOOGLE_MAPS_API_KEY}
 
 def descomponer_direccion(direccion):
     try:
@@ -263,9 +274,7 @@ def pago_exitoso():
     }
 
     ruta_pdf = generar_guia_pdf(data, tracking_code)
-    session['ruta_pdf'] = ruta_pdf  # 🔧 aquí lo guardas en la sesión
-    print("PDF generado y guardado en sesión:", session.get('pdf_buf') is not None)
-
+    session['ruta_pdf'] = ruta_pdf
 
     return render_template('pago_exitoso.html',
                            sender_name=data['nombre_rem'],
@@ -284,7 +293,7 @@ def pago_pendiente():
 class PDFDHLStyle(FPDF):
     def header(self):
         try:
-            self.image('static/Balula logo.png', 10, 8, 40)  # Cambia a tu logo DHL o quita si no tienes
+            self.image(os.path.join(BASE_DIR, 'static', 'Balula logo.png'), 10, 8, 40)
         except:
             pass
         self.set_draw_color(204, 0, 0)  # rojo DHL
@@ -357,7 +366,8 @@ def generar_guia_pdf(data, tracking_code):
     pdf.ln(5)
 
     # 📌 Generar QR con URL al rastreo
-    qr_url = f"http://localhost:5001/rastreo?tracking={tracking_code}"
+    base_url = PUBLIC_BASE_URL or request.url_root.rstrip('/')
+    qr_url = f"{base_url}{url_for('rastreo', tracking=tracking_code)}"
     qr_img = qrcode.make(qr_url)
     qr_path = os.path.join(PDF_FOLDER, f"qr_{tracking_code}.png")
     qr_img.save(qr_path)
@@ -396,10 +406,6 @@ def generar_guia_pdf(data, tracking_code):
 
 @app.route('/app/download/guia')
 def download_guia():
-    print("Entrando a /download/guia")
-    print("¿PDF está en sesión?:", 'pdf_buf' in session)
-    print("¿Tracking está en sesión?:", 'tracking' in session)
-    print("Tamaño del PDF:", len(session.get('pdf_buf', b'')))
     ruta_pdf = session.get('ruta_pdf')
     tracking = session.get('tracking')
 
@@ -424,4 +430,4 @@ def rastreo():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1', port=5001)
