@@ -1,0 +1,29 @@
+{% set ep = request.endpoint or '' %}
+{% set en_cotizador = ep in ['index', 'calculate', 'resultado', 'completar', 'pago', 'fake_checkout', 'confirmado', 'pago_fallido', 'pago_pendiente'] %}
+<nav class="navbar navbar-expand-lg site-nav sticky-top py-2" aria-label="Navegación principal">
+  <div class="container">
+    <a class="navbar-brand" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="" width="34" height="34">
+      Balula <span>Express</span>
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu"
+            aria-controls="menu" aria-expanded="false" aria-label="Abrir menú">
+      <i class="fa-solid fa-bars fa-lg" style="color: var(--ink)"></i>
+    </button>
+    <div class="collapse navbar-collapse" id="menu">
+      <ul class="navbar-nav mx-lg-auto gap-lg-1 pt-3 pt-lg-0">
+        <li class="nav-item"><a class="nav-link {{ 'active' if ep == 'home' }}" href="{{ url_for('home') }}" {{ 'aria-current=page' if ep == 'home' }}>Inicio</a></li>
+        <li class="nav-item"><a class="nav-link {{ 'active' if en_cotizador }}" href="{{ url_for('index') }}" {{ 'aria-current=page' if en_cotizador }}>Cotizar</a></li>
+        <li class="nav-item"><a class="nav-link {{ 'active' if ep == 'rastreo' }}" href="{{ url_for('rastreo') }}" {{ 'aria-current=page' if ep == 'rastreo' }}>Rastrear</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('home', _anchor='servicios') }}">Servicios</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('home', _anchor='contacto') }}">Contacto</a></li>
+      </ul>
+      <div class="d-flex gap-2 py-3 py-lg-0">
+        <a href="{{ url_for('login') }}" class="btn btn-ghost btn-sm {{ 'active' if ep == 'login' }}"><i class="fa-regular fa-user me-1"></i> Iniciar sesión</a>
+        {% if not en_cotizador %}
+        <a href="{{ url_for('index') }}" class="btn btn-primary btn-sm">Cotizar envío</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</nav>

@@ -1,0 +1,14 @@
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+{% if mensajes %}
+<div class="container pt-3" role="status" aria-live="polite">
+  {% for categoria, mensaje in mensajes %}
+  {% set icono = {'success': 'fa-circle-check', 'danger': 'fa-circle-exclamation', 'warning': 'fa-triangle-exclamation'}.get(categoria, 'fa-circle-info') %}
+  <div class="alert alert-{{ categoria if categoria != 'message' else 'info' }} alert-dismissible fade show" role="alert">
+    <i class="fa-solid {{ icono }} mt-1"></i>
+    <div>{{ mensaje }}</div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
