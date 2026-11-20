@@ -1,0 +1,302 @@
+{% extends 'base.html' %}
+
+{# Los avisos se muestran junto al formulario de contacto #}
+{% block flashes %}{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="row align-items-center gap-row">
+      <div class="col-lg-6">
+        <span class="eyebrow"><i class="fa-solid fa-location-dot"></i> Paquetería en todo México</span>
+        <h1 class="mt-3 mb-3">Lo llevamos contigo <span class="text-brand">hasta el final</span></h1>
+        <p class="lead mb-4">Cotiza en segundos, paga en línea y sigue tu paquete en cada paso. Envíos rápidos o ecológicos, con recolección a domicilio.</p>
+
+        <div class="quick-card" data-tabs>
+          <div class="quick-tabs" role="tablist">
+            <button type="button" class="active" role="tab" aria-selected="true" data-tab="tab-cotizar"><i class="fa-solid fa-calculator me-1"></i> Cotizar</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="tab-rastrear"><i class="fa-solid fa-magnifying-glass-location me-1"></i> Rastrear</button>
+          </div>
+          <div class="quick-body">
+            <form id="tab-cotizar" action="{{ url_for('index') }}" method="get" role="tabpanel">
+              <div class="row g-2">
+                <div class="col-sm-6">
+                  <label for="q-origen" class="visually-hidden">Origen</label>
+                  <div class="input-icon"><i class="fa-solid fa-circle-dot"></i>
+                    <input id="q-origen" name="origen" class="form-control" placeholder="Origen (ciudad o C.P.)" autocomplete="off"></div>
+                </div>
+                <div class="col-sm-6">
+                  <label for="q-destino" class="visually-hidden">Destino</label>
+                  <div class="input-icon"><i class="fa-solid fa-location-dot"></i>
+                    <input id="q-destino" name="destino" class="form-control" placeholder="Destino (ciudad o C.P.)" autocomplete="off"></div>
+                </div>
+                <div class="col-sm-5">
+                  <label for="q-peso" class="visually-hidden">Peso en kg</label>
+                  <div class="input-group">
+                    <input id="q-peso" name="peso" type="number" min="0.01" step="0.01" class="form-control" placeholder="Peso">
+                    <span class="input-group-text">kg</span>
+                  </div>
+                </div>
+                <div class="col-sm-7 d-grid">
+                  <button class="btn btn-primary">Cotizar ahora <i class="fa-solid fa-arrow-right ms-1"></i></button>
+                </div>
+              </div>
+            </form>
+            <form id="tab-rastrear" action="{{ url_for('rastreo') }}" method="get" role="tabpanel" hidden>
+              <div class="row g-2">
+                <div class="col-sm-8">
+                  <label for="q-guia" class="visually-hidden">Número de guía</label>
+                  <div class="input-icon"><i class="fa-solid fa-barcode"></i>
+                    <input id="q-guia" name="guia" class="form-control text-uppercase" placeholder="Ej. BLL-1A2B3C4D" required pattern="[A-Za-z0-9-]{4,20}"></div>
+                </div>
+                <div class="col-sm-4 d-grid"><button class="btn btn-primary">Rastrear</button></div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="trust-row">
+          <span><i class="fa-solid fa-map-location-dot"></i>Cobertura nacional</span>
+          <span><i class="fa-solid fa-satellite-dish"></i>Rastreo en línea</span>
+          <span><i class="fa-solid fa-leaf"></i>Opción ecológica</span>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="hero-art text-center">
+          <img src="{{ url_for('static', filename='img/hero.webp') }}" width="1100" height="652"
+               alt="Ilustración de camión, avión y repartidor con cajas" fetchpriority="high">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Servicios -->
+<section class="section" id="servicios">
+  <div class="container">
+    <div class="text-center mx-auto mb-5" style="max-width: 680px">
+      <span class="eyebrow">Servicios</span>
+      <h2 class="section-title">Un envío para cada necesidad</h2>
+      <p class="section-lead mx-auto">Desde un sobre con documentos hasta una caja de mudanza, elige la velocidad y el empaque que mejor te convenga.</p>
+    </div>
+    <div class="row g-4">
+      {% for icono, titulo, texto in [
+        ('fa-bolt', 'Envío rápido', 'Tu paquete llega en 1 a 2 días hábiles. Ideal para lo urgente.'),
+        ('fa-leaf', 'Envío ecológico', 'De 3 a 5 días hábiles con rutas consolidadas que reducen emisiones.'),
+        ('fa-truck-ramp-box', 'Recolección a domicilio', 'Pasamos por tu paquete o llévalo a un centro autorizado cercano.'),
+        ('fa-building', 'Soluciones para empresas', 'Recolección, almacenaje y distribución para negocios de cualquier tamaño.'),
+      ] %}
+      <div class="col-sm-6 col-lg-3 reveal">
+        <div class="card-b hoverable">
+          <div class="icon-badge {{ 'solid' if loop.first }}"><i class="fa-solid {{ icono }}"></i></div>
+          <h3>{{ titulo }}</h3>
+          <p>{{ texto }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- Cómo funciona -->
+<section class="section bg-brand-soft" id="como-funciona">
+  <div class="container">
+    <div class="row align-items-end mb-5 gap-row">
+      <div class="col-lg-7">
+        <span class="eyebrow">Cómo funciona</span>
+        <h2 class="section-title mb-0">Envía en 3 pasos, sin filas</h2>
+      </div>
+      <div class="col-lg-5 text-lg-end">
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Empezar mi envío</a>
+      </div>
+    </div>
+    <div class="row g-4 steps mt-2">
+      {% for titulo, texto in [
+        ('Cotiza', 'Ingresa origen, destino y medidas. Verás el precio al instante, con el desglose completo.'),
+        ('Completa y paga', 'Agrega los datos de quien envía y quien recibe, y paga en línea de forma segura.'),
+        ('Imprime y rastrea', 'Descarga tu guía con código QR, pégala en el paquete y síguelo en tiempo real.'),
+      ] %}
+      <div class="col-md-4 reveal">
+        <div class="card-b step-card">
+          <h3>{{ titulo }}</h3>
+          <p>{{ texto }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- Tarifas -->
+<section class="section" id="tarifas">
+  <div class="container">
+    <div class="row gap-row align-items-start">
+      <div class="col-lg-5">
+        <span class="eyebrow">Tarifas transparentes</span>
+        <h2 class="section-title">Sabes lo que pagas <span class="mark">antes de enviar</span></h2>
+        <p class="section-lead">La tarifa base depende de la distancia e incluye el primer kilo. Cobramos sobre el peso mayor entre el real y el volumétrico (largo × ancho × alto ÷ {{ '{:,}'.format(tarifas.FACTOR_VOLUMETRICO) }}).</p>
+        <ul class="value-list mt-4">
+          <li><i class="fa-solid fa-weight-hanging"></i><div><strong>Kilo adicional: {{ tarifas.COSTO_POR_KG_EXTRA | moneda }}</strong><span>Por cada kg facturable después del primero.</span></div></li>
+          <li><i class="fa-solid fa-bolt"></i><div><strong>Envío rápido: +{{ tarifas.COSTO_ENVIO_EXPRES | moneda }}</strong><span>Entrega en 1 a 2 días hábiles.</span></div></li>
+          <li><i class="fa-solid fa-seedling"></i><div><strong>Compensación de CO₂: +{{ tarifas.COSTO_CO2 | moneda }}</strong><span>Opcional, se destina a reforestación.</span></div></li>
+        </ul>
+      </div>
+      <div class="col-lg-7">
+        <div class="row g-3">
+          <div class="col-md-6 reveal">
+            <div class="card-b">
+              <h3 class="d-flex align-items-center gap-2"><i class="fa-solid fa-route text-brand"></i> Tarifa base</h3>
+              <ul class="line-items mt-2">
+                {% set ns = namespace(desde=0) %}
+                {% for limite, precio in tarifas.DISTANCIA_TARIFAS %}
+                <li>
+                  <span>{% if limite < 1e9 %}{{ '{:,}'.format(ns.desde) }}–{{ '{:,}'.format(limite) }} km{% else %}Más de {{ '{:,}'.format(ns.desde) }} km{% endif %}</span>
+                  <span>{{ precio | moneda }}</span>
+                </li>
+                {% set ns.desde = limite %}
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+          <div class="col-md-6 reveal">
+            <div class="card-b">
+              <h3 class="d-flex align-items-center gap-2"><i class="fa-solid fa-box-open text-brand"></i> Empaques</h3>
+              <ul class="line-items mt-2">
+                {% for cid, caja in tarifas.CAJAS.items() %}
+                <li>
+                  <span>{{ caja.nombre }}{% if caja.medidas %} <small class="text-muted">({{ caja.medidas | join('×') }} cm)</small>{% endif %}</span>
+                  <span>{{ 'Gratis' if not caja.costo else caja.costo | moneda }}</span>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p class="text-muted small mt-3 mb-0"><i class="fa-solid fa-circle-info me-1"></i> Precios en pesos mexicanos. El total exacto lo verás en el cotizador antes de pagar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Nosotros -->
+<section class="section bg-brand-soft" id="nosotros">
+  <div class="container">
+    <div class="row align-items-center gap-row">
+      <div class="col-lg-6 order-lg-2 reveal">
+        <span class="eyebrow">Nosotros</span>
+        <h2 class="section-title">Un equipo <span class="mark">ágil y comprometido</span></h2>
+        <p class="section-lead mb-4">Ofrecemos soluciones de envío para empresas y particulares, con tecnología inteligente y un equipo enfocado en la puntualidad, el cuidado y la atención. En Balula, cada entrega es una promesa cumplida.</p>
+        <ul class="value-list">
+          {% for icono, valor, texto in [
+            ('fa-clock', 'Puntualidad', 'Entregamos a tiempo; la rapidez es parte de nuestro compromiso.'),
+            ('fa-shield-halved', 'Seguridad', 'Cuidamos cada paquete como si fuera nuestro.'),
+            ('fa-handshake', 'Compromiso', 'Un servicio confiable y humano, siempre dispuesto a ayudarte.'),
+            ('fa-microchip', 'Innovación', 'Rastreo en línea, rutas optimizadas y procesos digitales.'),
+            ('fa-gauge-high', 'Eficiencia', 'Optimizamos cada proceso para reducir tiempos, costos y errores.'),
+          ] %}
+          <li><i class="fa-solid {{ icono }}"></i><div><strong>{{ valor }}</strong><span>{{ texto }}</span></div></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="col-lg-6 order-lg-1 text-center reveal">
+        <img src="{{ url_for('static', filename='img/equipo.webp') }}" width="900" height="682" loading="lazy"
+             alt="Repartidor de Balula con camión y paquetes" class="img-fluid">
+      </div>
+    </div>
+
+    <div class="row g-4 mt-4">
+      <div class="col-md-6 reveal">
+        <div class="card-b">
+          <div class="icon-badge"><i class="fa-solid fa-bullseye"></i></div>
+          <h3>Misión</h3>
+          <p>Proporcionar soluciones de envío rápidas, seguras y confiables, con tecnología de vanguardia y prácticas sostenibles, para conectar a personas y empresas de manera eficiente y transparente.</p>
+        </div>
+      </div>
+      <div class="col-md-6 reveal">
+        <div class="card-b">
+          <div class="icon-badge"><i class="fa-solid fa-eye"></i></div>
+          <h3>Visión</h3>
+          <p>Ser la empresa líder en logística integral, reconocida por su excelencia operativa, innovación y compromiso con la sostenibilidad: la opción preferida de personas y empresas en México.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sustentabilidad -->
+<section class="section" id="sustentabilidad">
+  <div class="container">
+    <div class="band reveal">
+      <div class="row align-items-center gap-row position-relative" style="z-index: 1">
+        <div class="col-lg-8">
+          <span class="eyebrow" style="background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.3)"><i class="fa-solid fa-leaf"></i> Sustentabilidad</span>
+          <h2 class="section-title">Entregamos paquetes y también un futuro más limpio</h2>
+          <p class="mb-4">Usamos cajas elaboradas con materiales reciclados y reciclables, ofrecemos un servicio ecológico con rutas consolidadas y te mostramos la huella de carbono de cada envío para que puedas compensarla con {{ tarifas.COSTO_CO2 | moneda }} destinados a reforestación.</p>
+          <a href="{{ url_for('index') }}" class="btn btn-light">Enviar de forma ecológica</a>
+        </div>
+        <div class="col-lg-4 text-center">
+          <img src="{{ url_for('static', filename='img/eco.webp') }}" width="387" height="412" loading="lazy"
+               alt="Bolsa de papel reciclado con hojas" style="max-height: 260px; width: auto">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Contacto -->
+<section class="section bg-brand-soft" id="contacto">
+  <div class="container">
+    <div class="row gap-row">
+      <div class="col-lg-5">
+        <span class="eyebrow">Contacto</span>
+        <h2 class="section-title">Estamos para ayudarte</h2>
+        <p class="section-lead mb-4">¿Dudas sobre un envío, una recolección o soluciones para tu negocio? Escríbenos.</p>
+        <div class="contact-item">
+          <div class="icon-badge"><i class="fa-solid fa-location-dot"></i></div>
+          <div><small>Oficinas</small>{{ contacto.empresa }}<br>{{ contacto.direccion }}</div>
+        </div>
+        <div class="contact-item">
+          <div class="icon-badge"><i class="fa-solid fa-phone"></i></div>
+          <div><small>Teléfono</small><a href="tel:{{ contacto.telefono_href }}">{{ contacto.telefono }}</a></div>
+        </div>
+        <div class="contact-item">
+          <div class="icon-badge"><i class="fa-regular fa-envelope"></i></div>
+          <div><small>Correo</small><a href="mailto:{{ contacto.correo }}">{{ contacto.correo }}</a></div>
+        </div>
+        <div class="contact-item">
+          <div class="icon-badge"><i class="fa-regular fa-clock"></i></div>
+          <div><small>Horario</small>{{ contacto.horario }}</div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <form class="panel needs-validation" action="{{ url_for('contacto') }}" method="post" novalidate>
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <h3 class="h5 mb-4">Envíanos un mensaje</h3>
+          {% include 'partials/flashes.html' %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="c-nombre">Nombre</label>
+              <input class="form-control" id="c-nombre" name="nombre" required maxlength="120" autocomplete="name">
+              <div class="invalid-feedback">Escribe tu nombre.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="c-correo">Correo electrónico</label>
+              <input class="form-control" id="c-correo" name="correo" type="email" required maxlength="160" autocomplete="email">
+              <div class="invalid-feedback">Escribe un correo válido.</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="c-mensaje">Mensaje</label>
+              <textarea class="form-control" id="c-mensaje" name="mensaje" rows="5" required minlength="10" maxlength="3000" placeholder="¿En qué te podemos ayudar?"></textarea>
+              <div class="invalid-feedback">Escribe un mensaje de al menos 10 caracteres.</div>
+            </div>
+            <div class="col-12">
+              <button class="btn btn-primary" type="submit" data-loading="Enviando…"><i class="fa-regular fa-paper-plane me-1"></i> Enviar mensaje</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

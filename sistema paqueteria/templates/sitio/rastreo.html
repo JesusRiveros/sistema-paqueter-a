@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}{% if envio %}Guía {{ envio.guia }} · {% endif %}Rastrear envío · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block content %}
+<section class="track-hero">
+  <div class="container text-center">
+    <span class="eyebrow"><i class="fa-solid fa-satellite-dish"></i> Rastreo</span>
+    <h1 class="section-title">¿Dónde está mi paquete?</h1>
+    <p class="section-lead mx-auto mb-4">Ingresa el número de guía que aparece en tu comprobante o escanea el código QR de la etiqueta.</p>
+    <form class="track-search" action="{{ url_for('rastreo') }}" method="get" role="search">
+      <div class="input-icon position-relative">
+        <i class="fa-solid fa-barcode"></i>
+        <label for="guia" class="visually-hidden">Número de guía</label>
+        <input id="guia" name="guia" class="form-control text-uppercase {{ 'is-invalid' if error }}" value="{{ guia }}"
+               placeholder="BLL-1A2B3C4D" required pattern="[A-Za-z0-9-]{4,20}" autocomplete="off" spellcheck="false"
+               {% if error %}aria-describedby="error-guia"{% endif %}>
+        <button class="btn btn-primary" type="submit">Rastrear</button>
+      </div>
+    </form>
+    {% if error %}
+    <div class="alert alert-warning mx-auto mt-3 text-start" id="error-guia" style="max-width: 640px" role="alert">
+      <i class="fa-solid fa-triangle-exclamation mt-1"></i><div>{{ error }}</div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="container pb-5">
+  {% if envio %}
+  {% set idx = estados_idx[envio.estado] %}
+  {% set cot = envio.cotizacion %}
+  {% set nombre_estado = estados[idx][1] %}
+  <div class="row g-4 justify-content-center">
+    <div class="col-lg-10">
+      <div class="panel">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+          <div>
+            <small class="text-muted fw-semibold text-uppercase" style="letter-spacing: .05em">Número de guía</small>
+            <div class="h3 mb-1" style="font-family: Consolas, monospace; letter-spacing: .05em">{{ envio.guia }}</div>
+            <span class="pill {{ 'ok' if envio.estado == 'entregado' }}"><i class="fa-solid {{ estados[idx][2] }}"></i> {{ nombre_estado }}</span>
+          </div>
+          <div class="text-md-end">
+            <small class="text-muted fw-semibold text-uppercase" style="letter-spacing: .05em">
+              {{ 'Entregado' if envio.estado == 'entregado' else 'Entrega estimada' }}
+            </small>
+            <div class="h4 mb-0">
+              {% if envio.estado == 'entregado' %}{{ envio.eventos[0].fecha | fecha }}
+              {% else %}{{ cot.fecha_min | fecha }} – {{ cot.fecha_max | fecha }}{% endif %}
+            </div>
+            <small class="text-muted">Servicio {{ tarifas.TIPOS_ENVIO[cot.tipo_envio].nombre | lower }}</small>
+          </div>
+        </div>
+
+        <div class="progress-track" aria-label="Progreso del envío: {{ nombre_estado }}">
+          <div class="bar" style="width: calc((100% - 40px) * {{ idx / (estados | length - 1) }})"></div>
+          {% for clave, nombre, icono in estados %}
+          <div class="node {{ 'done' if loop.index0 <= idx }} {{ 'current' if loop.index0 == idx }}">
+            <div class="ic"><i class="fa-solid {{ icono }}"></i></div>
+            <span>{{ nombre }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="panel h-100">
+        <h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Historial</h2>
+        <ol class="timeline">
+          {% if envio.estado != 'entregado' %}
+          {% set siguiente = estados[idx + 1] %}
+          <li class="pending">
+            <strong>Siguiente: {{ siguiente[1] }}</strong>
+            <div class="when">Te avisaremos aquí en cuanto ocurra</div>
+          </li>
+          {% endif %}
+          {% for ev in envio.eventos %}
+          <li>
+            <strong>{{ ev.descripcion }}</strong>
+            {% if ev.ubicacion %}<div><i class="fa-solid fa-location-dot text-brand me-1"></i>{{ ev.ubicacion }}</div>{% endif %}
+            <div class="when">{{ ev.fecha | fecha_hora }}</div>
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="panel h-100">
+        <h2 class="panel-title"><i class="fa-solid fa-box"></i> Detalles</h2>
+        <div class="route mb-3">
+          <div class="route-stop"><small>Origen</small>{{ envio.remitente.ciudad }}, {{ envio.remitente.estado }}</div>
+          <div class="route-stop end"><small>Destino</small>{{ envio.destinatario.ciudad }}, {{ envio.destinatario.estado }}</div>
+        </div>
+        <dl class="kv">
+          <dt>Peso</dt><dd>{{ cot.peso_facturable }} kg</dd>
+          <dt>Empaque</dt><dd>{{ tarifas.CAJAS[cot.caja].nombre }}</dd>
+          <dt>Creado</dt><dd>{{ envio.creado_en | fecha(false) }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  {% elif not error %}
+  <div class="row g-4 justify-content-center">
+    {% for icono, titulo, texto in [
+      ('fa-receipt', '¿Dónde está mi guía?', 'Tu número de guía empieza con BLL- y aparece en la confirmación del pago y en el PDF de tu envío.'),
+      ('fa-qrcode', 'Escanea el QR', 'El código QR de la etiqueta te trae directo a esta página con tu envío.'),
+      ('fa-headset', '¿Necesitas ayuda?', 'Llámanos al ' ~ contacto.telefono ~ ' o escríbenos a ' ~ contacto.correo ~ '.'),
+    ] %}
+    <div class="col-md-4">
+      <div class="card-b">
+        <div class="icon-badge"><i class="fa-solid {{ icono }}"></i></div>
+        <h3>{{ titulo }}</h3>
+        <p>{{ texto }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
