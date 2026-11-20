@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Pasarela de pago (demo) · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-5">
+      <div class="panel text-center">
+        <span class="demo-badge mb-3"><i class="fa-solid fa-flask"></i> Pasarela simulada</span>
+        <h1 class="h3 mb-1">Total a pagar</h1>
+        <p class="display-font fw-800 mb-1" style="font-size: 2.6rem; color: var(--b-700)">{{ c.detalle.total | moneda }}</p>
+        <p class="text-muted mb-4">De <strong>{{ contactos.remitente.nombre }}</strong> para <strong>{{ contactos.destinatario.nombre }}</strong></p>
+        <div class="notice text-start mb-4">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>Esta pantalla reemplaza a la pasarela real (Mercado Pago, Stripe, etc.) mientras se integra. Elige el resultado que quieres probar.</div>
+        </div>
+        <form method="post" class="d-grid gap-2">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit" name="resultado" value="success" class="btn btn-primary btn-lg"><i class="fa-solid fa-circle-check me-2"></i>Simular pago aprobado</button>
+          <button type="submit" name="resultado" value="pending" class="btn btn-outline-primary"><i class="fa-solid fa-hourglass-half me-2"></i>Simular pago pendiente</button>
+          <button type="submit" name="resultado" value="failure" class="btn btn-outline-primary"><i class="fa-solid fa-circle-xmark me-2"></i>Simular pago rechazado</button>
+        </form>
+        <a href="{{ url_for('pago') }}" class="btn btn-ghost btn-sm mt-3">Cancelar y volver</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

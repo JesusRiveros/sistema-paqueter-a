@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}¡Envío confirmado! · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% set cot = envio.cotizacion %}
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-7">
+      <div class="panel text-center">
+        <div class="success-mark"><i class="fa-solid fa-check"></i></div>
+        <h1 class="h2 mb-2">¡Listo, {{ envio.remitente.nombre.split(' ')[0] }}! Tu envío está confirmado</h1>
+        <p class="text-muted mb-4">El paquete para <strong>{{ envio.destinatario.nombre }}</strong> llegará entre el <strong>{{ cot.fecha_min | fecha }}</strong> y el <strong>{{ cot.fecha_max | fecha }}</strong>.</p>
+
+        <div class="ticket mb-4">
+          <small class="text-muted fw-semibold text-uppercase" style="letter-spacing: .06em">Número de guía</small>
+          <div class="code" id="codigo-guia">{{ envio.guia }}</div>
+          <button type="button" class="btn btn-ghost btn-sm mt-1" id="copiar" data-texto="{{ envio.guia }}"><i class="fa-regular fa-copy me-1"></i> Copiar</button>
+        </div>
+
+        <div class="d-grid d-sm-flex gap-2 justify-content-center mb-4">
+          <a href="{{ url_for('descargar_guia', guia=envio.guia) }}" class="btn btn-primary btn-lg"><i class="fa-solid fa-file-arrow-down me-2"></i>Descargar guía PDF</a>
+          <a href="{{ url_rastreo }}" class="btn btn-outline-primary btn-lg"><i class="fa-solid fa-magnifying-glass-location me-2"></i>Rastrear</a>
+        </div>
+
+        <div class="text-start">
+          <h2 class="h6 text-uppercase text-muted" style="letter-spacing: .05em">¿Qué sigue?</h2>
+          <ol class="timeline mt-3">
+            <li><strong>Imprime la guía</strong><div class="when">Pégala en un lado visible del paquete, sin cubrir el código de barras.</div></li>
+            <li class="pending"><strong>{{ 'Espera nuestra recolección' if envio.tipo_entrega == 'recolector' else 'Lleva tu paquete a un centro autorizado' }}</strong>
+              <div class="when">{{ 'Te llamaremos al ' ~ envio.remitente.telefono ~ ' para coordinar el horario.' if envio.tipo_entrega == 'recolector' else 'Presenta tu guía impresa en mostrador.' }}</div></li>
+            <li class="pending"><strong>Sigue tu paquete</strong><div class="when">Consulta el estado en cualquier momento con tu número de guía.</div></li>
+          </ol>
+        </div>
+
+        <div class="divider-dashed"></div>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <span class="text-muted">Total pagado: <strong style="color: var(--ink)">{{ envio.total | moneda }}</strong></span>
+          <a href="{{ url_for('nueva_cotizacion') }}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-plus me-1"></i> Hacer otro envío</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var btn = document.getElementById('copiar');
+    if (!btn || !navigator.clipboard) { if (btn) btn.hidden = true; return; }
+    btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(btn.dataset.texto).then(function () {
+        btn.innerHTML = '<i class="fa-solid fa-check me-1"></i> Copiado';
+        setTimeout(function () { btn.innerHTML = '<i class="fa-regular fa-copy me-1"></i> Copiar'; }, 2000);
+      });
+    });
+  })();
+</script>
+{% endblock %}

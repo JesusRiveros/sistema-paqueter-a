@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Confirmar y pagar · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% macro tarjeta(p, titulo, icono) -%}
+<div class="col-md-6">
+  <div class="panel h-100">
+    <div class="d-flex justify-content-between align-items-start">
+      <h2 class="panel-title mb-3"><i class="fa-solid {{ icono }}"></i> {{ titulo }}</h2>
+      <a href="{{ url_for('completar') }}" class="btn btn-ghost btn-sm" aria-label="Editar {{ titulo | lower }}"><i class="fa-solid fa-pen"></i></a>
+    </div>
+    <p class="fw-bold mb-1">{{ p.nombre }}</p>
+    <p class="mb-1 text-muted">{{ p.calle }}, {{ p.colonia }}</p>
+    <p class="mb-1 text-muted">{{ p.ciudad }}, {{ p.estado }}, C.P. {{ p.cp }}</p>
+    <p class="mb-0 text-muted"><i class="fa-solid fa-phone me-1 small"></i>{{ p.telefono[:2] }} {{ p.telefono[2:6] }} {{ p.telefono[6:] }}</p>
+    {% if p.correo %}<p class="mb-0 text-muted"><i class="fa-regular fa-envelope me-1 small"></i>{{ p.correo }}</p>{% endif %}
+    {% if p.referencias %}<p class="mt-2 mb-0 small"><strong>Referencias:</strong> {{ p.referencias }}</p>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="container">
+  <header class="app-header">
+    <h1>Confirma y paga</h1>
+    <p>Último paso. Revisa que todo esté correcto antes de pagar.</p>
+  </header>
+  {% include 'partials/stepper.html' %}
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="row g-4">
+        {{ tarjeta(contactos.remitente, 'Remitente', 'fa-arrow-up-from-bracket') }}
+        {{ tarjeta(contactos.destinatario, 'Destinatario', 'fa-house-flag') }}
+      </div>
+      <section class="panel mt-4">
+        <h2 class="panel-title"><i class="fa-solid fa-circle-info"></i> Antes de pagar</h2>
+        <ul class="value-list">
+          <li><i class="fa-solid fa-print"></i><div><strong>Imprime tu guía</strong><span>Al pagar podrás descargar la guía en PDF; pégala en un lado visible del paquete.</span></div></li>
+          <li><i class="fa-solid fa-{{ 'truck' if c.tipo_entrega == 'recolector' else 'store' }}"></i><div><strong>{{ tarifas.TIPOS_ENTREGA[c.tipo_entrega].nombre }}</strong>
+            <span>{{ 'Te contactaremos para coordinar el horario de recolección.' if c.tipo_entrega == 'recolector' else 'Lleva tu paquete con la guía impresa a cualquier centro autorizado.' }}</span></div></li>
+          <li><i class="fa-solid fa-ban"></i><div><strong>Artículos prohibidos</strong><span>No enviamos materiales peligrosos, inflamables, dinero en efectivo ni artículos ilegales.</span></div></li>
+        </ul>
+      </section>
+    </div>
+    <div class="col-lg-4">
+      {% include 'partials/resumen.html' %}
+      <form method="post" action="{{ url_for('procesar_pago') }}" class="mt-3">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fa-solid fa-lock me-2"></i>Pagar {{ c.detalle.total | moneda }}</button>
+        </div>
+        {% if pagos_simulados %}
+        <p class="text-center mt-2 mb-0"><span class="demo-badge"><i class="fa-solid fa-flask"></i> Modo demostración: no se hará ningún cargo</span></p>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
