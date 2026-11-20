@@ -1,23 +1,23 @@
 # Instalacion y ejecucion local
 # Requiere Python 3.10 o superior.
 #
-# Desde la raiz del repositorio, crea y activa un entorno virtual:
-#   Linux/macOS:
-#     python3 -m venv .venv
-#     source .venv/bin/activate
-#   Windows (PowerShell):
-#     py -m venv .venv
-#     .venv\Scripts\Activate.ps1
+# 1. Desde la raiz del repositorio, crea y activa un entorno virtual:
+#      Windows (PowerShell):  py -m venv .venv ; .venv\Scripts\Activate.ps1
+#      Linux/macOS:           python3 -m venv .venv && source .venv/bin/activate
+# 2. Instala dependencias:    python -m pip install -r requirements.txt
+# 3. Copia .env.example como .env y completa SECRET_KEY y GOOGLE_MAPS_API_KEY.
+#    (El proyecto de Google Cloud debe tener la facturacion activada.)
+# 4. Inicia la aplicacion:
+#      cd "sistema paqueteria"
+#      python app.py
+#    Sitio: http://127.0.0.1:5001/   Cotizador: http://127.0.0.1:5001/app/
 #
-# Instala estas dependencias desde la raiz:
-#   python -m pip install -r requirements.txt
+# Pruebas:   cd "sistema paqueteria" ; python -m pytest -q tests
 #
-# Inicia la aplicacion:
+# Actualizar el rastreo de un envio (estados: creado, recolectado, en_transito,
+# en_reparto, entregado):
 #   cd "sistema paqueteria"
-#   python app.py
-#
-# Abre en el navegador: http://127.0.0.1:5001/
-# Cotizador: http://127.0.0.1:5001/app/
+#   flask --app app avanzar-envio BLL-XXXXXXXX en_transito --ubicacion "CEDIS Vallejo, CDMX"
 
 Flask>=3.0,<4.0
 python-dotenv>=1.0,<2.0
@@ -25,3 +25,6 @@ requests>=2.31,<3.0
 fpdf2>=2.7,<3.0
 qrcode[pil]>=7.4,<9.0
 Pillow>=10.0,<13.0
+
+# Solo para desarrollo
+pytest>=8.0
