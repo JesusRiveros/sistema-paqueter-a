@@ -399,3 +399,28 @@ img { max-width: 100%; height: auto; }
   .lula-panel { position: fixed; inset: auto 8px 80px 8px; width: auto; height: calc(100vh - 100px); }
 }
 @media print { .lula { display: none !important; } }
+
+/* ---------- Portal repartidor / admin ---------- */
+.min-w-0 { min-width: 0; }
+.dot-num { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--b-100); color: var(--b-700); font-weight: 800; flex: none; }
+.pill.riesgo-alto { background: var(--err-bg); color: var(--err); border-color: #F6C9C3; }
+.pill.riesgo-medio { background: var(--warn-bg); color: var(--warn); border-color: #F5DFB3; }
+.pill.riesgo-bajo { background: var(--ok-bg); color: var(--ok); border-color: #C7EBD5; }
+.pin-num span { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: .85rem; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+.firma { width: 100%; height: 160px; border: 1.5px dashed var(--b-300); border-radius: var(--radius-sm); background: #fff; touch-action: none; display: block; }
+.leaflet-container { font-family: var(--font-body); }
+.tabla { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.tabla th { text-align: left; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); font-weight: 700; padding: .6rem .5rem; border-bottom: 2px solid var(--line); white-space: nowrap; }
+.tabla td { padding: .65rem .5rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tabla tr:hover td { background: var(--canvas); }
+.kpi { display: flex; flex-direction: column; gap: .2rem; }
+.kpi .valor { font-family: var(--font-head); font-weight: 800; font-size: 1.8rem; color: var(--ink); line-height: 1.1; }
+.kpi .etiqueta { color: var(--ink-3); font-size: .85rem; font-weight: 600; }
+.admin-nav { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.admin-nav a { padding: .45rem .9rem; border-radius: 999px; font-weight: 600; color: var(--ink-2); background: #fff; border: 1px solid var(--line); font-size: .9rem; }
+.admin-nav a.active, .admin-nav a:hover { background: var(--b-100); color: var(--b-700); border-color: var(--b-200); }
+.admin-nav .badge { background: var(--b-600); }
+.barras { display: flex; align-items: flex-end; gap: 6px; height: 140px; }
+.barras .b { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; }
+.barras .b .barra { display: block; width: 100%; background: var(--gradient); border-radius: 6px 6px 2px 2px; min-height: 2px; }
+.barras .b small { font-size: .7rem; color: var(--ink-3); }

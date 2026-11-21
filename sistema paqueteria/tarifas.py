@@ -24,6 +24,15 @@ COSTO_CO2 = 5                 # MXN, aportación para reforestar
 FACTOR_VOLUMETRICO = 5000     # cm³ / kg (estándar de la industria)
 FACTOR_CO2_KG_KM = 0.21 / 1000  # kg de CO₂ por kg transportado por km
 
+# Descuento por volumen para cargas masivas de empresas: (envíos mínimos, % de descuento).
+# TODO: confirmar con Balula; se aplica sobre el total de cada envío del lote.
+DESCUENTOS_VOLUMEN = [(50, 10), (10, 5)]
+
+
+def descuento_volumen(n_envios):
+    return next((pct for minimo, pct in DESCUENTOS_VOLUMEN if n_envios >= minimo), 0)
+
+
 LIMITES = {
     'peso_max': 70,        # kg
     'dimension_max': 200,  # cm por lado

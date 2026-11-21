@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Envíos para empresas · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block content %}
+<section class="track-hero">
+  <div class="container">
+    <div class="row align-items-center gap-row">
+      <div class="col-lg-6">
+        <span class="eyebrow"><i class="fa-solid fa-building"></i> Empresas</span>
+        <h1 class="section-title">Sube tu lista y genera todas tus guías de una vez</h1>
+        <p class="section-lead">Carga hasta {{ max_renglones }} envíos desde Excel o CSV, revisa el precio de cada uno, paga una sola vez y descarga tus guías. Pasamos a recolectar todo a tu almacén.</p>
+        <ul class="value-list mt-3">
+          {% for minimo, pct in descuentos | sort %}
+          <li><i class="fa-solid fa-tags"></i><div><strong>{{ pct }}% de descuento</strong><span>desde {{ minimo }} envíos en el mismo archivo</span></div></li>
+          {% endfor %}
+          <li><i class="fa-solid fa-leaf"></i><div><strong>Certificado verde del lote</strong><span>si compensas la huella de carbono de tus envíos</span></div></li>
+        </ul>
+      </div>
+      <div class="col-lg-6">
+        <form class="panel needs-validation" method="post" action="{{ url_for('empresas.cargar') }}" enctype="multipart/form-data" novalidate>
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <h2 class="panel-title"><span class="num">1</span> Tu empresa</h2>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6"><label class="form-label" for="empresa">Empresa</label><input class="form-control" id="empresa" name="empresa" required maxlength="160"></div>
+            <div class="col-md-6"><label class="form-label" for="rfc">RFC <span class="text-muted fw-normal">(opcional)</span></label><input class="form-control text-uppercase" id="rfc" name="rfc" maxlength="13"></div>
+            <div class="col-12"><label class="form-label" for="correo">Correo para avisos</label><input class="form-control" id="correo" name="correo" type="email" required maxlength="160"></div>
+          </div>
+          <h2 class="panel-title"><span class="num">2</span> Dónde recolectamos</h2>
+          <div class="row g-2 mb-3">
+            <div class="col-md-7"><label class="form-label" for="rem_nombre">Contacto</label><input class="form-control" id="rem_nombre" name="rem_nombre" required maxlength="120"></div>
+            <div class="col-md-5"><label class="form-label" for="rem_telefono">Teléfono</label><input class="form-control" id="rem_telefono" name="rem_telefono" required inputmode="numeric" maxlength="16"></div>
+            <div class="col-md-8"><label class="form-label" for="rem_calle">Calle y número</label><input class="form-control" id="rem_calle" name="rem_calle" required maxlength="200"></div>
+            <div class="col-md-4"><label class="form-label" for="rem_cp">C.P.</label><input class="form-control" id="rem_cp" name="rem_cp" required pattern="[0-9]{5}" maxlength="5" inputmode="numeric"></div>
+            <div class="col-md-4"><label class="form-label" for="rem_colonia">Colonia</label><input class="form-control" id="rem_colonia" name="rem_colonia" required maxlength="120"></div>
+            <div class="col-md-4"><label class="form-label" for="rem_ciudad">Ciudad</label><input class="form-control" id="rem_ciudad" name="rem_ciudad" required maxlength="120"></div>
+            <div class="col-md-4"><label class="form-label" for="rem_estado">Estado</label><input class="form-control" id="rem_estado" name="rem_estado" required maxlength="80"></div>
+          </div>
+          <h2 class="panel-title"><span class="num">3</span> Tu lista de envíos</h2>
+          <p class="small mb-2"><a href="{{ url_for('empresas.plantilla') }}"><i class="fa-solid fa-file-arrow-down me-1"></i>Descarga la plantilla</a> y llénala en Excel. Guárdala como .xlsx o .csv.</p>
+          <input class="form-control mb-3" type="file" name="archivo" accept=".csv,.xlsx" required aria-label="Archivo de envíos">
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="compensar" name="compensar" value="si">
+            <label class="form-check-label" for="compensar">Compensar el CO₂ de todos los envíos (+{{ tarifas.COSTO_CO2 | moneda }} c/u)</label>
+          </div>
+          <div class="d-grid"><button class="btn btn-primary btn-lg" type="submit" data-loading="Calculando precios… (puede tardar ~1 s por envío)">Ver precios</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

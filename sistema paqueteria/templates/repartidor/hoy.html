@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Mis entregas · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block asistente %}{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+{% block head %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">{% endblock %}
+
+{% block content %}
+<div class="container pb-5">
+  <header class="app-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+      <h1>Hola, {{ usuario_actual.nombre.split(' ')[0] }} 👋</h1>
+      <p>{{ paradas | length }} entrega{{ 's' if paradas | length != 1 }} pendiente{{ 's' if paradas | length != 1 }} · ruta estimada de {{ km_total }} km desde {{ inicio_txt }}</p>
+    </div>
+    <form method="post" action="{{ url_for('repartidor.optimizar') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" {{ 'disabled' if paradas | length < 2 }}><i class="fa-solid fa-wand-magic-sparkles me-1"></i> Optimizar mi ruta</button>
+    </form>
+  </header>
+
+  <div class="row g-3 mb-4">
+    {% for valor, etiqueta, icono in [(paradas | length, 'Pendientes', 'fa-box'), (entregados_hoy | length, 'Entregados hoy', 'fa-circle-check'), (km_total ~ ' km', 'Por recorrer', 'fa-route')] %}
+    <div class="col-4">
+      <div class="panel text-center py-3 px-2">
+        <i class="fa-solid {{ icono }} text-brand"></i>
+        <div class="display-font fw-800 fs-4">{{ valor }}</div>
+        <small class="text-muted">{{ etiqueta }}</small>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7 order-lg-2">
+      <div class="panel p-2">
+        <div id="mapa-ruta" class="map-box" style="height: 380px" aria-label="Mapa de tus paradas"></div>
+      </div>
+      <p class="form-text mt-2"><i class="fa-solid fa-brain me-1 text-brand"></i>
+        Riesgo de retraso estimado por un modelo de demostración entrenado con datos simulados (exactitud {{ (modelo.exactitud * 100) | round | int }}%). Atiende primero las paradas en rojo si puedes.</p>
+    </div>
+    <div class="col-lg-5 order-lg-1">
+      {% if not paradas %}
+      <div class="panel text-center">
+        <div class="success-mark neutral"><i class="fa-solid fa-mug-hot"></i></div>
+        <h2 class="h5">No tienes entregas pendientes</h2>
+        <p class="text-muted mb-0">Cuando operaciones te asigne paquetes aparecerán aquí.</p>
+      </div>
+      {% endif %}
+      <ol class="list-unstyled d-grid gap-2 mb-0">
+        {% for p in paradas %}
+        {% set e = p.envio %}
+        <li>
+          <a href="{{ url_for('repartidor.detalle', guia=e.guia) }}" class="panel d-flex gap-3 align-items-center p-3 text-decoration-none" style="color: inherit">
+            <span class="dot-num">{{ p.num }}</span>
+            <span class="flex-grow-1 min-w-0">
+              <strong class="d-block text-truncate">{{ e.destinatario.nombre }}</strong>
+              <small class="text-muted d-block text-truncate">{{ e.destinatario.colonia }}, {{ e.destinatario.ciudad }}</small>
+              <span class="d-flex flex-wrap gap-1 mt-1">
+                <span class="pill">{{ nombres_estado[e.estado] }}</span>
+                <span class="pill riesgo-{{ p.riesgo.nivel }}" title="Probabilidad estimada de retraso">Riesgo {{ p.riesgo.nivel }} · {{ p.riesgo.prob }}%</span>
+                {% if e.instruccion_entrega and e.instruccion_entrega != 'domicilio' %}<span class="pill"><i class="fa-solid fa-circle-info"></i> {{ e.instruccion_entrega }}</span>{% endif %}
+              </span>
+            </span>
+            <span class="text-muted small text-nowrap">{{ p.km }} km <i class="fa-solid fa-chevron-right ms-1"></i></span>
+          </a>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  window.BALULA_RUTA = { inicio: {{ inicio | list | tojson }}, paradas: {{ mapa | tojson }}, ubicacionUrl: {{ url_for('repartidor.ubicacion') | tojson }}, csrf: {{ csrf_token() | tojson }} };
+</script>
+<script src="{{ url_for('static', filename='js/repartidor.js') }}"></script>
+{% endblock %}

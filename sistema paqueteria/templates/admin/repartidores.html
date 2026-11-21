@@ -1,0 +1,44 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Equipo · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Equipo{% endblock %}
+{% block admin %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="panel p-0" style="overflow-x: auto">
+      <table class="tabla">
+        <thead><tr><th>Nombre</th><th>Rol</th><th>Zona</th><th>Pendientes</th><th>Último acceso</th><th></th></tr></thead>
+        <tbody>
+        {% for r in repartidores %}
+          <tr class="{{ 'text-muted' if not r.activo }}">
+            <td><strong>{{ r.nombre }}</strong><br><small>{{ r.correo }}{% if r.telefono %} · {{ r.telefono }}{% endif %}</small></td>
+            <td>{{ r.rol }}</td>
+            <td>{{ r.zona or '—' }}</td>
+            <td>{{ carga.get(r.id, 0) }}</td>
+            <td class="small">{{ r.ultimo_acceso.isoformat() | fecha_hora if r.ultimo_acceso else 'Nunca' }}{% if r.bloqueado_hasta %}<br><span class="text-danger">Bloqueado</span>{% endif %}</td>
+            <td class="text-nowrap">
+              <form method="post" action="{{ url_for('admin.restablecer', uid=r.id) }}" class="d-inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm" title="Generar contraseña temporal"><i class="fa-solid fa-key"></i></button></form>
+              <form method="post" action="{{ url_for('admin.alternar_activo', uid=r.id) }}" class="d-inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm">{{ 'Desactivar' if r.activo else 'Activar' }}</button></form>
+            </td>
+          </tr>
+        {% else %}<tr><td colspan="6" class="text-muted p-4">Aún no hay repartidores.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <form class="panel needs-validation" method="post" action="{{ url_for('admin.nuevo_repartidor') }}" novalidate>
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <h2 class="panel-title"><i class="fa-solid fa-user-plus"></i> Nuevo integrante</h2>
+      <label class="form-label" for="n-nombre">Nombre</label><input class="form-control mb-2" id="n-nombre" name="nombre" required minlength="3" maxlength="120">
+      <label class="form-label" for="n-correo">Correo</label><input class="form-control mb-2" id="n-correo" name="correo" type="email" required maxlength="160">
+      <label class="form-label" for="n-tel">Teléfono</label><input class="form-control mb-2" id="n-tel" name="telefono" maxlength="20">
+      <label class="form-label" for="n-zona">Zona</label><input class="form-control mb-2" id="n-zona" name="zona" maxlength="80" placeholder="Ej. Norte CDMX">
+      <label class="form-label" for="n-rol">Rol</label>
+      <select class="form-select mb-3" id="n-rol" name="rol"><option value="repartidor">Repartidor</option><option value="admin">Administrador</option></select>
+      <div class="d-grid"><button class="btn btn-primary">Crear con contraseña temporal</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

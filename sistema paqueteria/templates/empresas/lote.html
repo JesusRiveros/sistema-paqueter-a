@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Lote {{ lote.folio }} · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+
+{% block content %}
+<div class="container pb-5">
+  <header class="app-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+      <h1>Lote {{ lote.folio }} · {{ lote.empresa }}</h1>
+      <p>{{ validos | length }} envío{{ 's' if validos | length != 1 }} listo{{ 's' if validos | length != 1 }}{% if con_error %} · {{ con_error | length }} con error{% endif %}
+        · recolección en {{ lote.remitente.calle }}, {{ lote.remitente.ciudad }}</p>
+    </div>
+    <span class="pill {{ 'ok' if lote.estado == 'pagado' }}">{{ 'Pagado' if lote.estado == 'pagado' else 'Por pagar' }}</span>
+  </header>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      {% if con_error %}
+      <section class="panel">
+        <h2 class="panel-title text-danger"><i class="fa-solid fa-circle-exclamation"></i> Renglones con error (no se incluyen)</h2>
+        <ul class="line-items">{% for r in con_error %}<li><span>Fila {{ r.fila }} · {{ r.destinatario.nombre or 'sin nombre' }}</span><span class="text-danger small">{{ r.error }}</span></li>{% endfor %}</ul>
+        <p class="form-text mb-0">Corrige esas filas en tu archivo y súbelas en un lote nuevo.</p>
+      </section>
+      {% endif %}
+
+      <section class="panel p-0" style="overflow-x: auto">
+        <table class="tabla">
+          <thead><tr><th>{{ 'Guía' if lote.estado == 'pagado' else 'Fila' }}</th><th>Destinatario</th><th>Destino</th><th>Servicio</th><th>Peso</th><th class="text-end">Total</th></tr></thead>
+          <tbody>
+          {% if lote.estado == 'pagado' %}
+            {% for e in envios %}
+            <tr><td><a href="{{ url_for('descargar_guia', guia=e.guia) }}" title="Descargar guía PDF"><i class="fa-solid fa-file-pdf me-1"></i>{{ e.guia }}</a></td>
+              <td>{{ e.destinatario.nombre }}</td><td>{{ e.destinatario.ciudad }}</td><td>{{ tarifas.TIPOS_ENVIO[e.cotizacion.tipo_envio].nombre }}</td>
+              <td>{{ e.cotizacion.peso_facturable }} kg</td><td class="text-end">{{ e.total | moneda }}</td></tr>
+            {% endfor %}
+          {% else %}
+            {% for r in validos %}
+            <tr><td>{{ r.fila }}</td><td>{{ r.destinatario.nombre }}</td><td>{{ r.destinatario.ciudad }}, {{ r.destinatario.estado }}</td>
+              <td>{{ tarifas.TIPOS_ENVIO[r.cotizacion.tipo_envio].nombre }}</td><td>{{ r.cotizacion.peso_facturable }} kg</td>
+              <td class="text-end">{{ r.cotizacion.total | moneda }}</td></tr>
+            {% endfor %}
+          {% endif %}
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <div class="col-lg-4">
+      <aside class="panel summary">
+        <small class="text-muted fw-semibold text-uppercase" style="letter-spacing: .05em">Total del lote</small>
+        <div class="display-font fw-800 mb-1" style="font-size: 2.4rem; color: var(--b-700)">{{ lote.total | moneda }}</div>
+        <p class="text-muted small">MXN{% if lote.descuento_pct %} · incluye {{ lote.descuento_pct | int }}% de descuento por volumen{% endif %}{% if lote.compensar_co2 %} · con compensación de CO₂{% endif %}</p>
+        {% if lote.estado == 'borrador' %}
+          {% if validos %}
+          <form method="post" action="{{ url_for('empresas.pagar', folio=lote.folio) }}" class="d-grid">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn btn-primary btn-lg"><i class="fa-solid fa-lock me-2"></i>Pagar y generar {{ validos | length }} guías</button>
+          </form>
+          {% if pagos_simulados %}<p class="text-center mt-2 mb-0"><span class="demo-badge"><i class="fa-solid fa-flask"></i> Modo demostración</span></p>{% endif %}
+          {% endif %}
+          <a href="{{ url_for('empresas.inicio') }}" class="btn btn-ghost btn-sm w-100 mt-2">Subir otro archivo</a>
+        {% else %}
+          <div class="d-grid gap-2">
+            <a class="btn btn-primary" href="{{ url_for('empresas.guias_csv', folio=lote.folio) }}"><i class="fa-solid fa-file-csv me-1"></i> Descargar lista de guías</a>
+            {% if lote.compensar_co2 %}<a class="btn btn-outline-primary" href="{{ url_for('empresas.certificado', folio=lote.folio) }}"><i class="fa-solid fa-leaf me-1"></i> Certificado verde del lote</a>{% endif %}
+          </div>
+          <p class="form-text mt-2 mb-0">Descarga cada guía en PDF desde la tabla e imprímelas para pegarlas en los paquetes.</p>
+        {% endif %}
+      </aside>
+    </div>
+  </div>
+</div>
+{% endblock %}

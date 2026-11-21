@@ -1,0 +1,48 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Resumen · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Resumen de operaciones{% endblock %}
+{% block admin %}
+<div class="row g-3 mb-4">
+  {% for valor, etiqueta, icono, enlace in [
+    (k.envios_hoy, 'Envíos de hoy', 'fa-box', url_for('admin.envios')),
+    (k.en_camino, 'En camino', 'fa-truck-fast', url_for('admin.envios', filtro='activos')),
+    (k.sin_asignar, 'Sin repartidor', 'fa-user-clock', url_for('admin.envios', filtro='sin_asignar')),
+    ((k.a_tiempo_pct ~ '%') if k.a_tiempo_pct is not none else '—', 'Entregas a tiempo', 'fa-stopwatch', None),
+    (k.ingresos_30d | moneda, 'Ingresos 30 días', 'fa-sack-dollar', None),
+    (k.incidencias_abiertas, 'Incidencias abiertas', 'fa-triangle-exclamation', None),
+    (k.co2_compensado ~ ' kg', 'CO₂ compensado', 'fa-leaf', None),
+    ('US$' ~ ('%.4f' | format(k.ia_costo_prom)), 'Costo IA por conversación (' ~ k.ia_conversaciones ~ ')', 'fa-robot', url_for('admin.atencion')),
+  ] %}
+  <div class="col-6 col-lg-3">
+    {% if enlace %}<a href="{{ enlace }}" class="text-decoration-none" style="color: inherit">{% endif %}
+    <div class="panel kpi h-100"><i class="fa-solid {{ icono }} text-brand"></i><span class="valor">{{ valor }}</span><span class="etiqueta">{{ etiqueta }}</span></div>
+    {% if enlace %}</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-solid fa-chart-column"></i> Envíos por día (14 días)</h2>
+      <div class="barras" role="img" aria-label="Gráfica de envíos creados por día en los últimos 14 días">
+        {% for x in k.por_dia %}
+        <div class="b" title="{{ x.dia.isoformat() | fecha }}: {{ x.n }} envíos">
+          <small>{{ x.n if x.n }}</small>
+          <span class="barra" style="height: calc((100% - 40px) * {{ '%.3f' | format(x.n / k.max_dia) }})"></span>
+          <small>{{ x.dia.day }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Envíos recientes</h2>
+      <table class="tabla"><thead><tr><th>Guía</th><th>Destino</th><th>Estado</th><th>Total</th></tr></thead><tbody>
+        {% for e in recientes %}<tr><td><a href="{{ url_for('admin.envio_detalle', guia=e.guia) }}">{{ e.guia }}</a></td><td>{{ e.destinatario.ciudad }}</td><td><span class="pill">{{ nombres_estado[e.estado] }}</span></td><td>{{ e.total | moneda }}</td></tr>
+        {% else %}<tr><td colspan="4" class="text-muted">Aún no hay envíos.</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+  </div>
+</div>
+{% endblock %}

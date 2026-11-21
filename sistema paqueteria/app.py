@@ -11,9 +11,16 @@ from dotenv import load_dotenv
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    Response, session, url_for)
 
+import admin
 import asistente
+import auth
+import clientes
 import db
+import demo
+import empresas
 import geo
+import notificaciones
+import repartidor
 import tarifas
 from guia_pdf import generar_guia_pdf
 
@@ -23,13 +30,19 @@ load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_hex(32),
-    DATABASE=os.getenv('DATABASE') or os.path.join(BASE_DIR, 'instance', 'balula.sqlite3'),
+    SQLALCHEMY_DATABASE_URI=os.getenv('DATABASE_URL') or 'sqlite:///' + os.path.join(BASE_DIR, 'instance', 'balula.sqlite3'),
+    SQLALCHEMY_ENGINE_OPTIONS={'pool_pre_ping': True},
+    UPLOAD_FOLDER=os.getenv('UPLOAD_FOLDER') or os.path.join(BASE_DIR, 'instance', 'archivos'),
+    MAX_CONTENT_LENGTH=8 * 1024 * 1024,
     GOOGLE_MAPS_API_KEY=os.getenv('GOOGLE_MAPS_API_KEY', ''),
     PUBLIC_BASE_URL=os.getenv('PUBLIC_BASE_URL', '').rstrip('/'),
     PAGOS_SIMULADOS=os.getenv('PAGOS_SIMULADOS', '1') == '1',
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=auth.DURACION_SESION,
+    SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '0') == '1',
 )
+os.makedirs(os.path.join(BASE_DIR, 'instance'), exist_ok=True)
 db.init_app(app)
 
 CONTACTO = {
@@ -42,6 +55,12 @@ CONTACTO = {
 }
 
 app.config['CONTACTO'] = CONTACTO
+app.register_blueprint(auth.bp)
+app.register_blueprint(repartidor.bp)
+app.register_blueprint(admin.bp)
+app.register_blueprint(clientes.bp)
+app.register_blueprint(empresas.bp)
+demo.registrar_comando(app)
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
 RE_CP = re.compile(r'^\d{5}$')
@@ -88,6 +107,7 @@ def contexto_global():
         'contacto': CONTACTO,
         'tarifas': tarifas,
         'anio_actual': date.today().year,
+        'nombres_estado': db.NOMBRE_ESTADO,
     }
 
 
@@ -125,9 +145,13 @@ def cabeceras_seguridad(resp):
 # Mapas: Google con respaldo en OpenStreetMap (ver geo.py)
 # ---------------------------------------------------------------------------
 
-def descomponer_direccion(direccion):
+def ubicar_direccion(direccion, lat=None, lng=None):
+    """Partes de la dirección (para prellenar el paso 3) y coordenadas (para rutas y mapa)."""
     r = geo.geocodificar(direccion, app.config['GOOGLE_MAPS_API_KEY'])
-    return r['partes'] if r else {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
+    partes = r['partes'] if r else {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
+    if lat is None and r:
+        lat, lng = r['lat'], r['lng']
+    return partes, ({'lat': lat, 'lng': lng} if lat is not None and lng is not None else None)
 
 
 def calcular_distancia_km(origen, destino, coords=None, distancia_cliente=None):
@@ -192,14 +216,9 @@ def contacto():
     return redirect(url_for('home', _anchor='contacto'))
 
 
-@app.route('/iniciar-sesion')
-def login():
-    return render_template('sitio/login.html')
-
-
 @app.route('/formulario')
 def formulario():
-    return redirect(url_for('login'), 301)
+    return redirect(url_for('auth.login'), 301)
 
 
 @app.route('/rastreo')
@@ -213,8 +232,9 @@ def rastreo():
             envio = db.obtener_envio(guia)
             if not envio:
                 error = f'No encontramos la guía {guia}. Verifica que esté escrita correctamente.'
+    extra = clientes.contexto_rastreo(guia) if envio else {}
     return render_template('sitio/rastreo.html', guia=guia, envio=envio, error=error,
-                           estados=db.ESTADOS, estados_idx=db.ESTADOS_IDX)
+                           estados=db.ESTADOS, estados_idx=db.ESTADOS_IDX, **extra)
 
 
 # ---------------------------------------------------------------------------
@@ -283,13 +303,17 @@ def calcular_envio():
     if errores:
         return render_template('cotizador/cotizar.html', paso_actual=1, datos=datos, errores=errores), 400
 
+    origen_partes, origen_geo = ubicar_direccion(datos['origen'], coords[0], coords[1])
+    destino_partes, destino_geo = ubicar_direccion(datos['destino'], coords[2], coords[3])
     session['formulario'] = datos
     session['cotizacion'] = {
         'origen': datos['origen'],
         'destino': datos['destino'],
         'tipo_entrega': datos['tipo_entrega'],
-        'origen_partes': descomponer_direccion(datos['origen']),
-        'destino_partes': descomponer_direccion(datos['destino']),
+        'origen_partes': origen_partes,
+        'destino_partes': destino_partes,
+        'origen_geo': origen_geo,
+        'destino_geo': destino_geo,
         'detalle': cot.to_dict(),
     }
     session.pop('contactos', None)
@@ -375,7 +399,9 @@ def checkout_simulado():
             remitente=contactos['remitente'], destinatario=contactos['destinatario'],
             cotizacion=c['detalle'], tipo_entrega=c['tipo_entrega'],
             correo_destinatario=contactos['destinatario'].get('correo'),
+            origen=c.get('origen_geo'), destino=c.get('destino_geo'),
         )
+        notificaciones.notificar(guia, 'creado')
         session['mis_guias'] = (session.get('mis_guias', []) + [guia])[-20:]
         for clave in ('cotizacion', 'contactos', 'formulario'):
             session.pop(clave, None)
@@ -520,6 +546,12 @@ def no_encontrado(_e):
                            mensaje='La página que buscas no existe o fue movida.'), 404
 
 
+@app.errorhandler(403)
+def prohibido(_e):
+    return render_template('sitio/error.html', codigo=403, titulo='Acceso restringido',
+                           mensaje='Tu usuario no tiene permiso para ver esta sección.'), 403
+
+
 @app.errorhandler(500)
 def error_interno(_e):
     return render_template('sitio/error.html', codigo=500, titulo='Algo salió mal',
@@ -545,4 +577,5 @@ def avanzar_envio(guia, estado, ubicacion, descripcion):
 
 
 if __name__ == '__main__':
+    db.preparar_base(app)
     app.run(debug=os.getenv('FLASK_DEBUG') == '1', port=5001)

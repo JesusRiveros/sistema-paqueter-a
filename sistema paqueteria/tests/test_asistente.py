@@ -136,8 +136,8 @@ def test_queja_registra_folio(client, csrf, claude, app):
     datos = json.loads(falso.llamadas[1]['messages'][-1]['content'][0]['content'])
     assert datos['registrada'] is True and datos['folio'].startswith('QJ-')
     with app.app_context():
-        fila = db.get_db().execute('SELECT * FROM quejas').fetchone()
-    assert fila['guia'] == guia and fila['tipo'] == 'retraso'
+        fila = db.sa.session.query(db.Queja).one()
+        assert fila.guia == guia and fila.tipo == 'retraso'
 
 
 def test_queja_con_guia_inexistente_no_se_registra(client, csrf, claude, app):
@@ -146,7 +146,7 @@ def test_queja_con_guia_inexistente_no_se_registra(client, csrf, claude, app):
            respuesta(texto('No encuentro esa guía, ¿me la confirmas?')))
     enviar(client, csrf, 'queja')
     with app.app_context():
-        assert db.get_db().execute('SELECT COUNT(*) FROM quejas').fetchone()[0] == 0
+        assert db.sa.session.query(db.Queja).count() == 0
 
 
 def test_transferir_a_humano_marca_escalado(client, csrf, claude, app):
@@ -157,10 +157,10 @@ def test_transferir_a_humano_marca_escalado(client, csrf, claude, app):
     r = enviar(client, csrf, 'los voy a demandar en Profeco').get_json()
     assert r['escalado'] is True
     with app.app_context():
-        esc = db.get_db().execute('SELECT * FROM escalamientos').fetchone()
-        conv = db.get_db().execute('SELECT estado FROM conversaciones').fetchone()
-    assert esc['motivo'] == 'amenaza_legal' and 'Profeco' in esc['resumen']
-    assert conv['estado'] == 'escalada'
+        esc = db.sa.session.query(db.Escalamiento).one()
+        conv = db.sa.session.query(db.Conversacion).one()
+        assert esc.motivo == 'amenaza_legal' and 'Profeco' in esc.resumen
+        assert conv.estado == 'escalada'
 
 
 def test_historial_acotado_y_conversacion_guardada(client, csrf, claude, monkeypatch):

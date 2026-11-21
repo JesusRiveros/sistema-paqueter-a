@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}{{ envio.guia }} · Mis entregas{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block asistente %}{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+{% block head %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">{% endblock %}
+
+{% set dest = envio.destinatario %}
+{% block content %}
+<div class="container pb-5">
+  <header class="app-header">
+    <a href="{{ url_for('repartidor.hoy') }}" class="btn btn-ghost btn-sm mb-2"><i class="fa-solid fa-arrow-left me-1"></i> Mis entregas</a>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h1 class="mb-0" style="font-family: Consolas, monospace">{{ envio.guia }}</h1>
+      <span class="pill">{{ nombres[envio.estado] }}</span>
+    </div>
+  </header>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <section class="panel">
+        <h2 class="panel-title"><i class="fa-solid fa-house-flag"></i> Entregar a</h2>
+        <p class="fw-bold fs-5 mb-1">{{ dest.nombre }}</p>
+        <p class="mb-1">{{ dest.calle }}, {{ dest.colonia }}</p>
+        <p class="text-muted mb-2">{{ dest.ciudad }}, {{ dest.estado }}, C.P. {{ dest.cp }}</p>
+        {% if dest.referencias %}<div class="notice mb-2"><i class="fa-solid fa-signs-post"></i><div><strong>Referencias:</strong> {{ dest.referencias }}</div></div>{% endif %}
+        {% if envio.instruccion_entrega or envio.fecha_preferida or envio.nota_entrega %}
+        <div class="notice ok mb-2"><i class="fa-solid fa-calendar-check"></i><div><strong>Preferencia del cliente:</strong>
+          {% if envio.fecha_preferida %}entregar el {{ envio.fecha_preferida | fecha }}. {% endif %}
+          {% if envio.instruccion_entrega %}Dejar en: {{ envio.instruccion_entrega }}. {% endif %}{{ envio.nota_entrega or '' }}</div></div>
+        {% endif %}
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <a class="btn btn-outline-primary btn-sm" href="tel:+52{{ dest.telefono }}"><i class="fa-solid fa-phone me-1"></i> Llamar</a>
+          {% if envio.destino_lat is not none %}
+          <a class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination={{ envio.destino_lat }},{{ envio.destino_lng }}"><i class="fa-solid fa-diamond-turn-right me-1"></i> Google Maps</a>
+          <a class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener" href="https://waze.com/ul?ll={{ envio.destino_lat }},{{ envio.destino_lng }}&navigate=yes"><i class="fa-brands fa-waze me-1"></i> Waze</a>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if envio.destino_lat is not none %}
+      <section class="panel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="panel-title mb-0"><i class="fa-solid fa-route"></i> Rutas alternas</h2>
+          <button class="btn btn-outline-primary btn-sm" id="ver-rutas" data-url="{{ url_for('repartidor.rutas_alternas', guia=envio.guia) }}">Calcular</button>
+        </div>
+        <div id="mapa-detalle" class="map-box" style="height: 260px" data-lat="{{ envio.destino_lat }}" data-lng="{{ envio.destino_lng }}"></div>
+        <ul class="line-items mt-2" id="lista-rutas" aria-live="polite"></ul>
+      </section>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-5">
+      {% if envio.estado == 'entregado' %}
+      <div class="panel text-center"><div class="success-mark"><i class="fa-solid fa-check"></i></div><h2 class="h5">Entregado</h2></div>
+      {% else %}
+        {% if siguiente %}
+        <form class="panel con-ubicacion" method="post" action="{{ url_for('repartidor.avanzar', guia=envio.guia) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="estado" value="{{ siguiente }}">
+          <input type="hidden" name="lat"><input type="hidden" name="lng">
+          <h2 class="panel-title"><i class="fa-solid fa-forward-step"></i> Siguiente paso</h2>
+          <label class="form-label" for="ubicacion">Ubicación (opcional)</label>
+          <input class="form-control mb-3" id="ubicacion" name="ubicacion" maxlength="200" placeholder="Ej. CEDIS Vallejo">
+          <div class="d-grid"><button class="btn btn-primary btn-lg">Marcar como «{{ nombres[siguiente] }}»</button></div>
+        </form>
+        {% endif %}
+
+        {% if envio.estado == 'en_reparto' %}
+        <form class="panel con-ubicacion needs-validation" method="post" enctype="multipart/form-data" novalidate
+              action="{{ url_for('repartidor.entregar', guia=envio.guia) }}" id="form-entrega">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="lat"><input type="hidden" name="lng">
+          <input type="hidden" name="firma" id="firma-dato">
+          <h2 class="panel-title"><i class="fa-solid fa-signature"></i> Confirmar entrega</h2>
+          <label class="form-label" for="codigo">Código de entrega del cliente</label>
+          <input class="form-control form-control-lg text-center mb-1" id="codigo" name="codigo" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required
+                 style="letter-spacing: .5em; font-family: Consolas, monospace" placeholder="••••">
+          <p class="form-text mb-3">El destinatario lo recibió por correo. Pídeselo; sin él no se puede entregar.</p>
+          <div class="row g-2 mb-3">
+            <div class="col-7"><label class="form-label" for="receptor">Recibe</label><input class="form-control" id="receptor" name="receptor" required minlength="3" maxlength="120" value="{{ dest.nombre }}"></div>
+            <div class="col-5"><label class="form-label" for="relacion">Relación</label>
+              <select class="form-select" id="relacion" name="relacion">{% for k, v in relaciones.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+          </div>
+          <label class="form-label">Firma</label>
+          <canvas id="firma" class="firma" width="600" height="220" aria-label="Área para firmar"></canvas>
+          <div class="d-flex justify-content-between mb-3"><small class="text-muted">Firma con el dedo</small><button type="button" class="btn btn-ghost btn-sm" id="borrar-firma">Borrar</button></div>
+          <label class="form-label" for="foto">Foto del paquete entregado <span class="text-muted fw-normal">(opcional)</span></label>
+          <input class="form-control mb-3" type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp" capture="environment">
+          <div class="d-grid"><button class="btn btn-primary btn-lg" type="submit"><i class="fa-solid fa-check me-1"></i> Entregar</button></div>
+        </form>
+        {% endif %}
+
+        <form class="panel con-ubicacion" method="post" action="{{ url_for('repartidor.incidencia', guia=envio.guia) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="lat"><input type="hidden" name="lng">
+          <h2 class="panel-title"><i class="fa-solid fa-triangle-exclamation"></i> Reportar incidencia</h2>
+          <select class="form-select mb-2" name="tipo" required aria-label="Tipo de incidencia">
+            <option value="">Elige qué pasó…</option>
+            {% for k, v in tipos_incidencia.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+          <textarea class="form-control mb-3" name="nota" rows="2" maxlength="500" placeholder="Detalles (opcional)"></textarea>
+          <div class="d-grid"><button class="btn btn-outline-primary">Reportar</button></div>
+        </form>
+      {% endif %}
+
+      <section class="panel">
+        <h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Historial</h2>
+        <ol class="timeline">{% for ev in d.eventos %}<li><strong>{{ ev.descripcion }}</strong>{% if ev.ubicacion %}<div>{{ ev.ubicacion }}</div>{% endif %}<div class="when">{{ ev.fecha | fecha_hora }}</div></li>{% endfor %}</ol>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('static', filename='js/repartidor.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Atención a clientes · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Atención a clientes{% endblock %}
+
+{% macro boton_atendido(tipo, id_) -%}
+<form method="post" action="{{ url_for('admin.marcar_atendido', tipo=tipo, item_id=id_) }}" class="d-inline">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="btn btn-ghost btn-sm"><i class="fa-solid fa-check me-1"></i>Atendido</button></form>
+{%- endmacro %}
+
+{% block admin %}
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-solid fa-person-circle-exclamation"></i> Casos pasados a una persona</h2>
+      <ul class="list-unstyled mb-0 d-grid gap-3">
+        {% for e in escalamientos %}
+        <li class="{{ 'opacity-50' if e.estado != 'pendiente' }}">
+          <div class="d-flex justify-content-between gap-2"><strong>{{ e.folio }} · {{ e.motivo | replace('_', ' ') }}</strong>
+            <span class="small text-muted">{{ e.creado.isoformat() | fecha_hora }}</span></div>
+          <p class="mb-1 small">{{ e.resumen }}</p>
+          <div class="d-flex gap-2 align-items-center">
+            {% if e.telefono %}<a href="tel:+52{{ e.telefono }}" class="small"><i class="fa-solid fa-phone me-1"></i>{{ e.telefono }}</a>{% endif %}
+            {% if e.conversacion_id %}<a class="small" href="{{ url_for('admin.conversacion', cid=e.conversacion_id) }}">Ver conversación</a>{% endif %}
+            {% if e.estado == 'pendiente' %}{{ boton_atendido('escalamiento', e.id) }}{% endif %}
+          </div>
+        </li>
+        {% else %}<li class="text-muted">Sin casos escalados.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-solid fa-comment-dots"></i> Quejas registradas por Lula</h2>
+      <ul class="list-unstyled mb-0 d-grid gap-3">
+        {% for q in quejas %}
+        <li class="{{ 'opacity-50' if q.estado != 'abierta' }}">
+          <div class="d-flex justify-content-between gap-2"><strong>{{ q.folio }} · {{ q.tipo | replace('_', ' ') }}</strong>
+            <span class="small text-muted">{{ q.creada.isoformat() | fecha_hora }}</span></div>
+          <p class="mb-1 small">{{ q.descripcion }}</p>
+          <div class="d-flex gap-2 align-items-center small">
+            {% if q.guia %}<a href="{{ url_for('admin.envio_detalle', guia=q.guia) }}">{{ q.guia }}</a>{% endif %}
+            {% if q.nombre_cliente %}<span>{{ q.nombre_cliente }}</span>{% endif %}
+            {% if q.conversacion_id %}<a href="{{ url_for('admin.conversacion', cid=q.conversacion_id) }}">Conversación</a>{% endif %}
+            {% if q.estado == 'abierta' %}{{ boton_atendido('queja', q.id) }}{% endif %}
+          </div>
+        </li>
+        {% else %}<li class="text-muted">Sin quejas.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-regular fa-envelope"></i> Formulario de contacto</h2>
+      <ul class="list-unstyled mb-0 d-grid gap-3">
+        {% for m in mensajes %}
+        <li class="{{ 'opacity-50' if m.atendido }}">
+          <div class="d-flex justify-content-between gap-2"><strong>{{ m.nombre }}</strong><span class="small text-muted">{{ m.creado_en.isoformat() | fecha_hora }}</span></div>
+          <a class="small" href="mailto:{{ m.correo }}">{{ m.correo }}</a>
+          <p class="mb-1 small">{{ m.mensaje }}</p>
+          {% if not m.atendido %}{{ boton_atendido('mensaje', m.id) }}{% endif %}
+        </li>
+        {% else %}<li class="text-muted">Sin mensajes.</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="panel h-100">
+      <h2 class="panel-title"><i class="fa-solid fa-robot"></i> Conversaciones del asistente</h2>
+      <p class="small text-muted">{{ costos.conversaciones }} conversaciones · {{ '{:,}'.format(costos.entrada + costos.cache_lectura + costos.cache_escritura) }} tokens de entrada · {{ '{:,}'.format(costos.salida) }} de salida ·
+        costo estimado US${{ '%.4f' | format(costos.costo) }} (promedio US${{ '%.4f' | format(costos.costo / (costos.conversaciones or 1)) }} por conversación)</p>
+      <table class="tabla"><thead><tr><th>Fecha</th><th>Canal</th><th>Turnos</th><th>Costo</th><th>Estado</th></tr></thead><tbody>
+        {% for c in conversaciones %}<tr><td><a href="{{ url_for('admin.conversacion', cid=c.id) }}">{{ c.actualizada.isoformat() | fecha_hora }}</a></td><td>{{ c.canal }}</td><td>{{ c.turnos }}</td><td>US${{ '%.4f' | format(c.costo_usd) }}</td><td>{{ c.estado }}</td></tr>
+        {% else %}<tr><td colspan="5" class="text-muted">Sin conversaciones.</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
+  </div>
+</div>
+{% endblock %}

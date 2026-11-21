@@ -1,0 +1,30 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Conversación · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Conversación con el asistente{% endblock %}
+{% block admin %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <section class="panel">
+      <div class="d-flex flex-column gap-2">
+        {% for m in mensajes %}
+          {% if m.rol == 'herramienta' %}
+          <details class="small text-muted"><summary><i class="fa-solid fa-gear me-1"></i>Consulta interna · {{ m.texto.split('(')[0] }}</summary><code style="white-space: pre-wrap; word-break: break-word">{{ m.texto }}</code></details>
+          {% else %}
+          <div class="lula-msg {{ 'yo' if m.rol == 'cliente' else 'ella' }}" style="max-width: 80%">{{ m.texto }}</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-4">
+    <section class="panel">
+      <dl class="kv">
+        <dt>Canal</dt><dd>{{ conv.canal }}</dd><dt>Estado</dt><dd>{{ conv.estado }}</dd>
+        <dt>Turnos</dt><dd>{{ conv.turnos }}</dd><dt>Llamadas a la API</dt><dd>{{ conv.llamadas_api }}</dd>
+        <dt>Tokens entrada</dt><dd>{{ conv.tokens_entrada }}</dd><dt>Caché leída</dt><dd>{{ conv.tokens_cache_lectura }}</dd>
+        <dt>Tokens salida</dt><dd>{{ conv.tokens_salida }}</dd><dt>Costo estimado</dt><dd>US${{ '%.4f' | format(conv.costo_usd) }}</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+{% endblock %}

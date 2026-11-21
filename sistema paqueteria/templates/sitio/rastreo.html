@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}{% if envio %}Guía {{ envio.guia }} · {% endif %}Rastrear envío · Balula Express{% endblock %}
 {% block body_class %}app-shell{% endblock %}
+{% block head %}{% if vivo %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">{% endif %}{% endblock %}
 
 {% block content %}
 <section class="track-hero">
@@ -64,6 +65,22 @@
       </div>
     </div>
 
+    {% if vivo %}
+    <div class="col-lg-10">
+      <div class="panel" id="en-vivo" data-url="{{ url_for('clientes.vivo', guia=envio.guia) }}">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+          <h2 class="panel-title mb-0"><span class="lula-dot"></span> {{ vivo.repartidor or 'Tu repartidor' }} va en camino</h2>
+          <div class="text-end">
+            {% if vivo.minutos is not none %}<div class="display-font fw-800 fs-3 text-brand" id="vivo-min">~{{ vivo.minutos }} min</div>{% endif %}
+            <small class="text-muted" id="vivo-detalle">{{ vivo.paradas_antes }} parada{{ 's' if vivo.paradas_antes != 1 }} antes de la tuya{% if vivo.km is not none %} · {{ vivo.km }} km{% endif %}</small>
+          </div>
+        </div>
+        <div id="mapa-vivo" class="map-box" style="height: 300px" data-lat="{{ vivo.lat }}" data-lng="{{ vivo.lng }}"></div>
+        <p class="form-text mt-2 mb-0">Ubicación actualizada hace <span id="vivo-hace">{{ vivo.hace_min }}</span> min. Por tu privacidad no mostramos tu dirección en el mapa. Ten a la mano tu código de entrega.</p>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="col-lg-6">
       <div class="panel h-100">
         <h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Historial</h2>
@@ -97,9 +114,44 @@
           <dt>Peso</dt><dd>{{ cot.peso_facturable }} kg</dd>
           <dt>Empaque</dt><dd>{{ tarifas.CAJAS[cot.caja].nombre }}</dd>
           <dt>Creado</dt><dd>{{ envio.creado_en | fecha(false) }}</dd>
+          {% if preferencia and preferencia.fecha %}<dt>Entregar el</dt><dd>{{ preferencia.fecha | fecha }}</dd>{% endif %}
         </dl>
+        {% if compensado %}
+        <a href="{{ url_for('clientes.certificado', guia=envio.guia) }}" class="btn btn-outline-primary btn-sm mt-3 w-100"><i class="fa-solid fa-leaf me-1"></i> Ver certificado verde</a>
+        {% endif %}
       </div>
     </div>
+    {% if puede_reprogramar %}
+    <div class="col-lg-10" id="reprogramar">
+      <form class="panel" method="post" action="{{ url_for('clientes.preferencias', guia=envio.guia) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <h2 class="panel-title"><i class="fa-solid fa-calendar-days"></i> ¿No vas a estar? Elige cuándo y dónde lo dejamos</h2>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" for="pref-fecha">Día de entrega</label>
+            <select class="form-select" id="pref-fecha" name="fecha" required>
+              {% for f in opciones_fecha %}<option value="{{ f }}" {{ 'selected' if preferencia.fecha == f }}>{{ f | fecha }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="pref-inst">Dónde</label>
+            <select class="form-select" id="pref-inst" name="instruccion">
+              {% for k, v in instrucciones.items() %}<option value="{{ k }}" {{ 'selected' if preferencia.instruccion == k }}>{{ v }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" for="pref-verif">Últimos 4 dígitos del teléfono del destinatario</label>
+            <input class="form-control" id="pref-verif" name="verificacion" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="off">
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="pref-nota">Indicaciones <span class="text-muted fw-normal">(si es con un vecino: nombre y número de casa)</span></label>
+            <input class="form-control" id="pref-nota" name="nota" maxlength="300">
+          </div>
+          <div class="col-12"><button class="btn btn-primary">Guardar preferencia</button></div>
+        </div>
+      </form>
+    </div>
+    {% endif %}
   </div>
   {% elif not error %}
   <div class="row g-4 justify-content-center">
@@ -119,4 +171,28 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if vivo %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  (function () {
+    var caja = document.getElementById('mapa-vivo'), panel = document.getElementById('en-vivo');
+    var pos = [parseFloat(caja.dataset.lat), parseFloat(caja.dataset.lng)];
+    caja.innerHTML = '';
+    var m = L.map(caja, { scrollWheelZoom: false }).setView(pos, 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(m);
+    var pin = L.marker(pos, { icon: L.divIcon({ className: 'pin-num', html: '<span style="background:#FD3700"><i class="fa-solid fa-truck"></i></span>', iconSize: [30, 30], iconAnchor: [15, 15] }) }).addTo(m);
+    setInterval(function () {
+      fetch(panel.dataset.url).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.vivo) { if (d.estado !== 'en_reparto') location.reload(); return; }
+        pos = [d.vivo.lat, d.vivo.lng]; pin.setLatLng(pos); m.panTo(pos);
+        document.getElementById('vivo-hace').textContent = d.vivo.hace_min;
+        var min = document.getElementById('vivo-min'); if (min && d.vivo.minutos != null) min.textContent = '~' + d.vivo.minutos + ' min';
+      });
+    }, 30000);
+  })();
+</script>
+{% endif %}
 {% endblock %}
