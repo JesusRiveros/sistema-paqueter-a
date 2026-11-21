@@ -15,8 +15,15 @@
   </header>
   {% include 'partials/stepper.html' %}
 
-  {% if errores.get('general') %}
-  <div class="alert alert-danger" role="alert"><i class="fa-solid fa-circle-exclamation mt-1"></i><div>{{ errores.general }}</div></div>
+  {% if errores %}
+  <div class="alert alert-danger" role="alert" id="errores-cotizacion" tabindex="-1">
+    <i class="fa-solid fa-circle-exclamation mt-1"></i>
+    <div>
+      <strong>No pudimos cotizar tu envío</strong>
+      <ul class="mb-0 ps-3 mt-1">{% for mensaje in errores.values() %}<li>{{ mensaje }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+  <script>document.getElementById('errores-cotizacion').focus();</script>
   {% endif %}
 
   <form id="form-cotizar" class="needs-validation" action="{{ url_for('calculate') }}" method="post" novalidate>

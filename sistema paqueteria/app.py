@@ -1,18 +1,19 @@
 """Balula Express: sitio web, cotizador y rastreo de envíos."""
-import math
 import os
 import re
 import secrets
 from datetime import date
+import time
 from functools import wraps
 
 import click
-import requests
 from dotenv import load_dotenv
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    Response, session, url_for)
 
+import asistente
 import db
+import geo
 import tarifas
 from guia_pdf import generar_guia_pdf
 
@@ -39,6 +40,8 @@ CONTACTO = {
     'telefono_href': '+525570665793',
     'horario': 'Lunes a viernes de 9:00 a 19:00 · Sábados de 9:00 a 14:00',
 }
+
+app.config['CONTACTO'] = CONTACTO
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
 RE_CP = re.compile(r'^\d{5}$')
@@ -119,83 +122,23 @@ def cabeceras_seguridad(resp):
 
 
 # ---------------------------------------------------------------------------
-# Google Maps (servidor)
+# Mapas: Google con respaldo en OpenStreetMap (ver geo.py)
 # ---------------------------------------------------------------------------
 
 def descomponer_direccion(direccion):
-    vacio = {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
-    if not app.config['GOOGLE_MAPS_API_KEY'] or not direccion:
-        return vacio
-    try:
-        resp = requests.get('https://maps.googleapis.com/maps/api/geocode/json',
-                            params={'address': direccion, 'key': app.config['GOOGLE_MAPS_API_KEY'],
-                                    'language': 'es', 'region': 'mx'},
-                            timeout=8).json()
-        componentes = resp['results'][0]['address_components']
-    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
-        app.logger.warning('No se pudo geocodificar "%s": %s', direccion, e)
-        return vacio
-
-    partes = dict(vacio)
-    numero = ruta = ''
-    for comp in componentes:
-        tipos = comp['types']
-        if 'street_number' in tipos:
-            numero = comp['long_name']
-        elif 'route' in tipos:
-            ruta = comp['long_name']
-        elif 'sublocality_level_1' in tipos or 'neighborhood' in tipos:
-            partes['colonia'] = comp['long_name']
-        elif 'locality' in tipos:
-            partes['ciudad'] = comp['long_name']
-        elif 'administrative_area_level_1' in tipos:
-            partes['estado'] = comp['long_name']
-        elif 'postal_code' in tipos:
-            partes['cp'] = comp['long_name']
-    partes['calle'] = f'{ruta} {numero}'.strip()
-    return partes
-
-
-def _haversine_km(lat1, lon1, lat2, lon2):
-    r = 6371
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
-
-
-def _float_o_none(valor):
-    try:
-        n = float(valor)
-        return n if math.isfinite(n) else None
-    except (TypeError, ValueError):
-        return None
+    r = geo.geocodificar(direccion, app.config['GOOGLE_MAPS_API_KEY'])
+    return r['partes'] if r else {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
 
 
 def calcular_distancia_km(origen, destino, coords=None, distancia_cliente=None):
-    """Distancia por carretera. Orden: Distance Matrix → ruta del navegador → línea recta × 1.25."""
-    if app.config['GOOGLE_MAPS_API_KEY']:
-        try:
-            data = requests.get('https://maps.googleapis.com/maps/api/distancematrix/json',
-                                params={'origins': origen, 'destinations': destino,
-                                        'key': app.config['GOOGLE_MAPS_API_KEY']},
-                                timeout=8).json()
-            if data.get('status') != 'OK':
-                app.logger.error('Google Distance Matrix rechazó la petición: %s %s',
-                                 data.get('status'), data.get('error_message', ''))
-            elemento = data['rows'][0]['elements'][0]
-            if elemento.get('status') == 'OK':
-                return round(elemento['distance']['value'] / 1000, 1)
-        except (requests.RequestException, KeyError, IndexError, ValueError) as e:
-            app.logger.warning('Distance Matrix falló: %s', e)
-
-    distancia_cliente = _float_o_none(distancia_cliente)
-    if distancia_cliente and 0 < distancia_cliente < 10000:
-        return round(distancia_cliente, 1)
-
-    if coords and all(c is not None for c in coords):
-        return round(_haversine_km(*coords) * 1.25, 1)
-    return None
+    """Distancia por carretera en km, o None si ningún proveedor pudo calcularla."""
+    try:
+        km, fuente = geo.distancia_km(origen, destino, app.config['GOOGLE_MAPS_API_KEY'], coords, distancia_cliente)
+    except geo.SinProveedores as e:
+        app.logger.warning('Sin distancia para "%s" → "%s": %s', origen, destino, e)
+        return None
+    app.logger.info('Distancia %s km (fuente: %s)', km, fuente)
+    return km
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +265,7 @@ def calcular_envio():
 
     distancia = None
     if not errores:
-        coords = [_float_o_none(datos[k]) for k in ('origen_lat', 'origen_lng', 'destino_lat', 'destino_lng')]
+        coords = [geo.float_o_none(datos[k]) for k in ('origen_lat', 'origen_lng', 'destino_lat', 'destino_lng')]
         distancia = calcular_distancia_km(datos['origen'], datos['destino'], coords, datos['distancia_ruta_km'])
         if distancia is None:
             errores['destino'] = ('No pudimos calcular la distancia entre esas direcciones. Intenta de nuevo en unos '
@@ -493,6 +436,78 @@ def nueva_cotizacion():
     for clave in ('cotizacion', 'contactos', 'formulario'):
         session.pop(clave, None)
     return redirect(url_for('index'))
+
+
+# ---------------------------------------------------------------------------
+# Asistente de atención al cliente (chat)
+# ---------------------------------------------------------------------------
+
+ASISTENTE_LIMITE_MENSAJES = 20      # por sesión...
+ASISTENTE_VENTANA_SEG = 5 * 60      # ...cada 5 minutos
+
+
+def _conversacion_de_sesion(canal='web', crear=True):
+    cid = session.get('asistente_conv')
+    if cid and db.obtener_conversacion(cid):
+        return cid
+    if not crear:
+        return None
+    cid = asistente.nueva_conversacion(canal)
+    session['asistente_conv'] = cid
+    return cid
+
+
+@app.route('/api/asistente/estado')
+def asistente_estado():
+    return jsonify(configurado=asistente.esta_configurado())
+
+
+@app.route('/api/asistente/historial')
+def asistente_historial():
+    cid = _conversacion_de_sesion(crear=False)
+    mensajes = db.chat_mensajes(cid) if cid else []
+    return jsonify(mensajes=[{'rol': m['rol'], 'texto': m['texto']} for m in mensajes])
+
+
+@app.route('/api/asistente/reiniciar', methods=['POST'])
+def asistente_reiniciar():
+    session.pop('asistente_conv', None)
+    return jsonify(ok=True)
+
+
+@app.route('/api/asistente/mensaje', methods=['POST'])
+def asistente_mensaje():
+    datos = request.get_json(silent=True) or {}
+    texto = str(datos.get('texto', '')).strip()
+    if not texto:
+        return jsonify(ok=False, error='Escribe un mensaje.'), 400
+    if len(texto) > 1000:
+        return jsonify(ok=False, error='Tu mensaje es muy largo; resúmelo en menos de 1000 caracteres.'), 400
+
+    ahora = time.time()
+    recientes = [t for t in session.get('asistente_ts', []) if ahora - t < ASISTENTE_VENTANA_SEG]
+    if len(recientes) >= ASISTENTE_LIMITE_MENSAJES:
+        return jsonify(ok=False, error='Enviaste muchos mensajes seguidos. Espera un par de minutos.'), 429
+    session['asistente_ts'] = recientes + [ahora]
+
+    canal = datos.get('canal') if datos.get('canal') in ('web', 'voz') else 'web'
+    cid = _conversacion_de_sesion(canal)
+    try:
+        r = asistente.responder(cid, texto)
+    except asistente.AsistenteNoConfigurado:
+        return jsonify(ok=False, error='El asistente no está disponible en este momento. '
+                                       f"Llámanos al {CONTACTO['telefono']} o escríbenos a {CONTACTO['correo']}."), 503
+    return jsonify(ok=True, texto=r['texto'], escalado=r['escalado'])
+
+
+@app.cli.command('asistente-costos')
+def asistente_costos():
+    """Muestra tokens y costo estimado del asistente (total y promedio por conversación)."""
+    r = db.resumen_costos_asistente()
+    n = r['conversaciones'] or 1
+    click.echo(f"Conversaciones: {r['conversaciones']}  ·  turnos: {r['turnos']}  ·  llamadas a la API: {r['llamadas']}")
+    click.echo(f"Tokens entrada: {r['entrada']:,}  ·  salida: {r['salida']:,}  ·  caché leída: {r['cache_lectura']:,}  ·  caché escrita: {r['cache_escritura']:,}")
+    click.echo(f"Costo estimado total: US${r['costo']:.4f}  ·  promedio por conversación: US${r['costo'] / n:.4f}")
 
 
 # ---------------------------------------------------------------------------
