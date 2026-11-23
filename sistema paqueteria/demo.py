@@ -127,6 +127,7 @@ def registrar_comando(app):
     @click.option('--password', default=None, help='Contraseña fija para todos los usuarios demo (mín. 10 caracteres con letras y números).')
     def sembrar_demo(password):
         """Crea usuarios y envíos de demostración (no duplica si ya existen)."""
+        db.preparar_base(app)  # aplica migraciones (y respalda una base de la versión anterior)
         credenciales, n = sembrar(password)
         click.echo(f'Envíos creados: {n}')
         if credenciales:
