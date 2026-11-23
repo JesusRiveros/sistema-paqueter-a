@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% block title %}Cotizar envío · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% macro err(campo) -%}
+  {% if errores.get(campo) %}<div class="invalid-feedback d-block" id="err-{{ campo }}">{{ errores[campo] }}</div>{% endif %}
+{%- endmacro %}
+
+{% block content %}
+<div class="container">
+  <header class="app-header">
+    <h1>Cotiza tu envío</h1>
+    <p>Precio al instante, sin registro. Paga solo cuando estés listo.</p>
+  </header>
+  {% include 'partials/stepper.html' %}
+
+  {% if errores.get('general') %}
+  <div class="alert alert-danger" role="alert"><i class="fa-solid fa-circle-exclamation mt-1"></i><div>{{ errores.general }}</div></div>
+  {% endif %}
+
+  <form id="form-cotizar" class="needs-validation" action="{{ url_for('calculate') }}" method="post" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    {% for campo in ['origen_lat', 'origen_lng', 'destino_lat', 'destino_lng', 'distancia_ruta_km'] %}
+    <input type="hidden" name="{{ campo }}" id="{{ campo }}" value="{{ datos.get(campo, '') }}">
+    {% endfor %}
+
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <!-- 1. Ruta -->
+        <section class="panel" aria-labelledby="t-ruta">
+          <h2 class="panel-title" id="t-ruta"><span class="num">1</span> ¿De dónde a dónde?</h2>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="origen">Dirección de origen</label>
+              <div class="input-icon"><i class="fa-solid fa-circle-dot"></i>
+                <input class="form-control {{ 'is-invalid' if errores.get('origen') }}" id="origen" name="origen" required minlength="5"
+                       value="{{ datos.get('origen', '') }}" placeholder="Calle, colonia, ciudad o C.P." autocomplete="off"></div>
+              {{ err('origen') }}
+              <div class="invalid-feedback">Escribe la dirección de origen.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="destino">Dirección de destino</label>
+              <div class="input-icon"><i class="fa-solid fa-location-dot"></i>
+                <input class="form-control {{ 'is-invalid' if errores.get('destino') }}" id="destino" name="destino" required minlength="5"
+                       value="{{ datos.get('destino', '') }}" placeholder="Calle, colonia, ciudad o C.P." autocomplete="off"></div>
+              {{ err('destino') }}
+              <div class="invalid-feedback">Escribe la dirección de destino.</div>
+            </div>
+          </div>
+          <div class="map-box mt-3" id="mapa" aria-label="Mapa de la ruta">
+            <div class="text-center px-3"><i class="fa-solid fa-map-location-dot fa-2x mb-2" style="color: var(--b-300)"></i><br>
+              Elige origen y destino de las sugerencias para ver la ruta</div>
+          </div>
+          <p class="form-text mt-2 mb-0" id="ruta-info" aria-live="polite"></p>
+        </section>
+
+        <!-- 2. Paquete -->
+        <section class="panel" aria-labelledby="t-paquete">
+          <h2 class="panel-title" id="t-paquete"><span class="num">2</span> Tu paquete</h2>
+          <div class="row g-3">
+            {% for campo, etiqueta, unidad, minimo, maximo, paso in [
+              ('peso', 'Peso', 'kg', 0.01, tarifas.LIMITES.peso_max, 0.01),
+              ('largo', 'Largo', 'cm', 1, tarifas.LIMITES.dimension_max, 0.1),
+              ('ancho', 'Ancho', 'cm', 1, tarifas.LIMITES.dimension_max, 0.1),
+              ('alto', 'Alto', 'cm', 0.1, tarifas.LIMITES.dimension_max, 0.1),
+            ] %}
+            <div class="col-6 col-md-3">
+              <label class="form-label" for="{{ campo }}">{{ etiqueta }}</label>
+              <div class="input-group has-validation">
+                <input type="number" inputmode="decimal" class="form-control" id="{{ campo }}" name="{{ campo }}" required
+                       min="{{ minimo }}" max="{{ maximo }}" step="{{ paso }}" value="{{ datos.get(campo, '') }}">
+                <span class="input-group-text">{{ unidad }}</span>
+                <div class="invalid-feedback">Entre {{ minimo }} y {{ maximo }} {{ unidad }}.</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="notice mt-3" id="peso-info">
+            <i class="fa-solid fa-scale-balanced"></i>
+            <div>Cobramos el peso mayor entre el <strong>real</strong> y el <strong>volumétrico</strong> (largo × ancho × alto ÷ {{ '{:,}'.format(tarifas.FACTOR_VOLUMETRICO) }}).
+              <span id="peso-detalle"></span></div>
+          </div>
+        </section>
+
+        <!-- 3. Empaque -->
+        <section class="panel" aria-labelledby="t-caja">
+          <h2 class="panel-title" id="t-caja"><span class="num">3</span> Empaque</h2>
+          <div class="choice-grid" role="radiogroup" aria-labelledby="t-caja">
+            {% set caja_sel = datos.get('caja') or 'propia' %}
+            {% for cid, caja in tarifas.CAJAS.items() %}
+            <label class="choice" data-caja="{{ cid }}">
+              <input type="radio" name="caja" value="{{ cid }}" {{ 'checked' if cid == caja_sel }}>
+              <span class="choice-body">
+                <span class="check"><i class="fa-solid fa-check"></i></span>
+                <span class="choice-img">
+                  {% if caja.img %}<img src="{{ url_for('static', filename=caja.img) }}" alt="" loading="lazy">
+                  {% else %}<i class="fa-solid fa-box"></i>{% endif %}
+                </span>
+                <span class="choice-title">{{ caja.nombre }}</span>
+                <span class="choice-meta">{{ caja.descripcion }}{% if caja.medidas %}<br>{{ caja.medidas | join(' × ') }} cm · hasta {{ caja.peso_max }} kg{% endif %}</span>
+                <span class="choice-price">{{ 'Sin costo' if not caja.costo else '+' ~ (caja.costo | moneda) }}</span>
+                <span class="choice-meta small text-danger d-none" data-no-cabe>No cabe tu paquete</span>
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+        </section>
+
+        <!-- 4. Servicio -->
+        <section class="panel" aria-labelledby="t-servicio">
+          <h2 class="panel-title" id="t-servicio"><span class="num">4</span> Servicio y entrega</h2>
+          <p class="form-label mb-2">Velocidad de envío</p>
+          <div class="choice-grid cols-2 mb-4" role="radiogroup" aria-label="Velocidad de envío">
+            {% set envio_sel = datos.get('tipo_envio') or 'eco' %}
+            {% for tid, t in tarifas.TIPOS_ENVIO.items() %}
+            <label class="choice">
+              <input type="radio" name="tipo_envio" value="{{ tid }}" required {{ 'checked' if tid == envio_sel }}>
+              <span class="choice-body">
+                <span class="check"><i class="fa-solid fa-check"></i></span>
+                <span class="choice-title"><i class="fa-solid {{ t.icono }}"></i> {{ t.nombre }}</span>
+                <span class="choice-meta">{{ t.descripcion }}</span>
+                <span class="choice-price">{{ 'Incluido' if not t.costo else '+' ~ (t.costo | moneda) }}</span>
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+
+          <p class="form-label mb-2">¿Cómo nos entregas el paquete?</p>
+          <div class="choice-grid cols-2" role="radiogroup" aria-label="Tipo de entrega">
+            {% for eid, e in tarifas.TIPOS_ENTREGA.items() %}
+            <label class="choice">
+              <input type="radio" name="tipo_entrega" value="{{ eid }}" required {{ 'checked' if datos.get('tipo_entrega') == eid }}>
+              <span class="choice-body">
+                <span class="check"><i class="fa-solid fa-check"></i></span>
+                <span class="choice-title"><i class="fa-solid {{ e.icono }}"></i> {{ e.nombre }}</span>
+                <span class="choice-meta">{{ 'Pasamos por él sin costo extra' if eid == 'recolector' else 'Entrégalo en la sucursal más cercana' }}</span>
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          {{ err('tipo_entrega') }}
+
+          <div class="divider-dashed"></div>
+          <div class="form-check d-flex gap-3 align-items-start">
+            <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" value="si" id="compensar" name="compensar" {{ 'checked' if datos.get('compensar') }}>
+            <label class="form-check-label" for="compensar">
+              <strong><i class="fa-solid fa-seedling text-success me-1"></i> Compensar la huella de carbono (+{{ tarifas.COSTO_CO2 | moneda }})</strong><br>
+              <span class="text-muted small">Tu envío emite aproximadamente <strong id="co2-kg">—</strong> de CO₂. Tu aportación se destina a reforestación.</span>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <!-- Resumen en vivo -->
+      <div class="col-lg-4">
+        <aside class="panel summary" aria-labelledby="t-estimado">
+          <h2 class="panel-title mb-3" id="t-estimado"><i class="fa-solid fa-calculator"></i> Precio estimado</h2>
+          <ul class="line-items" id="conceptos" aria-live="polite">
+            <li><span>Completa los datos de tu paquete para ver el precio.</span></li>
+          </ul>
+          <div class="summary-total">
+            <span class="fw-semibold"><span id="total-label">Total</span> <small class="text-muted fw-normal">MXN</small></span>
+            <span class="amount" id="total">—</span>
+          </div>
+          <p class="form-text mt-2" id="estimado-nota"></p>
+          <p class="small mb-3" id="fechas"></p>
+          <div class="d-grid">
+            <button type="submit" class="btn btn-primary btn-lg" data-loading="Calculando…">Continuar <i class="fa-solid fa-arrow-right ms-1"></i></button>
+          </div>
+          <p class="form-text text-center mt-2 mb-0"><i class="fa-solid fa-lock me-1"></i> Aún no se te cobrará nada</p>
+        </aside>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.BALULA = {
+    apiCotizar: {{ url_for('api_cotizar') | tojson }},
+    csrf: {{ csrf_token() | tojson }},
+    tiposEnvio: {{ tarifas.TIPOS_ENVIO | tojson }},
+    mapsKey: {{ google_maps_api_key | tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='js/cotizador.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,19 @@
+# Entornos y configuracion local
+.venv/
+source/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Datos generados por la app
+sistema paqueteria/instance/
+sistema paqueteria/static/guias/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

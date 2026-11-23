@@ -1,427 +1,533 @@
-from flask import Flask, render_template, request, session, redirect, url_for
-from datetime import datetime, timedelta
-import requests
+"""Balula Express: sitio web, cotizador y rastreo de envíos."""
+import math
 import os
-from fpdf import FPDF
-import io
-from flask import send_file
-import uuid
-import qrcode
-from PIL import Image
+import re
+import secrets
+from datetime import date
+from functools import wraps
 
-PDF_FOLDER = os.path.join(os.getcwd(), 'static', 'guias')
-os.makedirs(PDF_FOLDER, exist_ok=True)
+import click
+import requests
+from dotenv import load_dotenv
+from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
+                   Response, session, url_for)
+
+import db
+import tarifas
+from guia_pdf import generar_guia_pdf
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
 
 app = Flask(__name__)
-app.secret_key = 'una_clave_super_secreta_1234'
+app.config.update(
+    SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_hex(32),
+    DATABASE=os.getenv('DATABASE') or os.path.join(BASE_DIR, 'instance', 'balula.sqlite3'),
+    GOOGLE_MAPS_API_KEY=os.getenv('GOOGLE_MAPS_API_KEY', ''),
+    PUBLIC_BASE_URL=os.getenv('PUBLIC_BASE_URL', '').rstrip('/'),
+    PAGOS_SIMULADOS=os.getenv('PAGOS_SIMULADOS', '1') == '1',
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+)
+db.init_app(app)
 
-DISTANCIA_TARIFAS = [
-    (50, 60),
-    (500, 120),
-    (1500, 250),
-    (3000, 350),
-    (float('inf'), 400)
-]
-
-COSTO_POR_KG_EXTRA = 10
-COSTO_ENVIO_EXPRES = 20
-COSTO_CO2 = 5
-BOX_COSTS = {
-    'small': 10,
-    'books': 15,
-    'shoes': 25,
-    'move': 40
+CONTACTO = {
+    'empresa': 'Balula Express S.A. de C.V.',
+    'direccion': 'Av. Industria #742, Bodega 5, Col. Industrial Vallejo, Alcaldía Azcapotzalco, C.P. 02300, Ciudad de México',
+    'correo': 'contacto@baluladata.com',
+    'telefono': '55 7066 5793',
+    'telefono_href': '+525570665793',
+    'horario': 'Lunes a viernes de 9:00 a 19:00 · Sábados de 9:00 a 14:00',
 }
 
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY") or "AIzaSyA549SLkse93t1ZxtweOjrCUn8jfWYowdk"
+RE_TELEFONO = re.compile(r'^\d{10}$')
+RE_CP = re.compile(r'^\d{5}$')
+RE_CORREO = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+RE_GUIA = re.compile(r'^[A-Za-z0-9-]{4,20}$')
+
+
+# ---------------------------------------------------------------------------
+# Utilidades de plantilla
+# ---------------------------------------------------------------------------
+
+DIAS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
+MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+
+@app.template_filter('fecha')
+def filtro_fecha(iso, con_dia=True):
+    if not iso:
+        return ''
+    d = date.fromisoformat(str(iso)[:10])
+    texto = f'{d.day} {MESES[d.month - 1]}'
+    return f'{DIAS[d.weekday()]} {texto}' if con_dia else f'{texto} {d.year}'
+
+
+@app.template_filter('fecha_hora')
+def filtro_fecha_hora(iso):
+    return f'{filtro_fecha(iso, con_dia=False)}, {str(iso)[11:16]}'
+
+
+@app.template_filter('moneda')
+def filtro_moneda(valor):
+    try:
+        return f'${float(valor):,.2f}'
+    except (TypeError, ValueError):
+        return '—'
+
+
+@app.context_processor
+def contexto_global():
+    return {
+        'google_maps_api_key': app.config['GOOGLE_MAPS_API_KEY'],
+        'pagos_simulados': app.config['PAGOS_SIMULADOS'],
+        'csrf_token': csrf_token,
+        'contacto': CONTACTO,
+        'tarifas': tarifas,
+        'anio_actual': date.today().year,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Seguridad: token CSRF para formularios y la API
+# ---------------------------------------------------------------------------
+
+def csrf_token():
+    if '_csrf' not in session:
+        session['_csrf'] = secrets.token_urlsafe(32)
+    return session['_csrf']
+
+
+@app.before_request
+def verificar_csrf():
+    if request.method != 'POST':
+        return
+    enviado = request.form.get('_csrf') or request.headers.get('X-CSRF-Token')
+    if not enviado or not secrets.compare_digest(enviado, session.get('_csrf', '')):
+        if request.is_json:
+            return jsonify(ok=False, error='La sesión expiró. Recarga la página.'), 400
+        flash('Tu sesión expiró. Intenta de nuevo.', 'warning')
+        return redirect(request.referrer or url_for('home'))
+
+
+@app.after_request
+def cabeceras_seguridad(resp):
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    resp.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Google Maps (servidor)
+# ---------------------------------------------------------------------------
 
 def descomponer_direccion(direccion):
+    vacio = {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
+    if not app.config['GOOGLE_MAPS_API_KEY'] or not direccion:
+        return vacio
     try:
-        url = 'https://maps.googleapis.com/maps/api/geocode/json'
-        params = {'address': direccion, 'key': GOOGLE_MAPS_API_KEY}
-        resp = requests.get(url, params=params).json()
-        components = resp['results'][0]['address_components']
+        resp = requests.get('https://maps.googleapis.com/maps/api/geocode/json',
+                            params={'address': direccion, 'key': app.config['GOOGLE_MAPS_API_KEY'],
+                                    'language': 'es', 'region': 'mx'},
+                            timeout=8).json()
+        componentes = resp['results'][0]['address_components']
+    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+        app.logger.warning('No se pudo geocodificar "%s": %s', direccion, e)
+        return vacio
 
-        resultado = {
-            'street': '',
-            'neighborhood': '',
-            'city': '',
-            'state': ''
-        }
-        for comp in components:
-            tipos = comp['types']
-            if 'street_number' in tipos:
-                resultado['street'] = comp['long_name'] + ' ' + resultado['street']
-            if 'route' in tipos:
-                resultado['street'] += comp['long_name']
-            if 'sublocality_level_1' in tipos or 'neighborhood' in tipos:
-                resultado['neighborhood'] = comp['long_name']
-            if 'locality' in tipos:
-                resultado['city'] = comp['long_name']
-            if 'administrative_area_level_1' in tipos:
-                resultado['state'] = comp['long_name']
-        resultado['street'] = resultado['street'].strip()
-        return resultado
-    except Exception as e:
-        print("Error descomponiendo dirección:", e)
-        return {
-            'street': direccion,
-            'neighborhood': '',
-            'city': '',
-            'state': ''
-        }
+    partes = dict(vacio)
+    numero = ruta = ''
+    for comp in componentes:
+        tipos = comp['types']
+        if 'street_number' in tipos:
+            numero = comp['long_name']
+        elif 'route' in tipos:
+            ruta = comp['long_name']
+        elif 'sublocality_level_1' in tipos or 'neighborhood' in tipos:
+            partes['colonia'] = comp['long_name']
+        elif 'locality' in tipos:
+            partes['ciudad'] = comp['long_name']
+        elif 'administrative_area_level_1' in tipos:
+            partes['estado'] = comp['long_name']
+        elif 'postal_code' in tipos:
+            partes['cp'] = comp['long_name']
+    partes['calle'] = f'{ruta} {numero}'.strip()
+    return partes
 
-# Ruta raíz muestra la web estática (inicio)
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    r = 6371
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _float_o_none(valor):
+    try:
+        n = float(valor)
+        return n if math.isfinite(n) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def calcular_distancia_km(origen, destino, coords=None, distancia_cliente=None):
+    """Distancia por carretera. Orden: Distance Matrix → ruta del navegador → línea recta × 1.25."""
+    if app.config['GOOGLE_MAPS_API_KEY']:
+        try:
+            data = requests.get('https://maps.googleapis.com/maps/api/distancematrix/json',
+                                params={'origins': origen, 'destinations': destino,
+                                        'key': app.config['GOOGLE_MAPS_API_KEY']},
+                                timeout=8).json()
+            if data.get('status') != 'OK':
+                app.logger.error('Google Distance Matrix rechazó la petición: %s %s',
+                                 data.get('status'), data.get('error_message', ''))
+            elemento = data['rows'][0]['elements'][0]
+            if elemento.get('status') == 'OK':
+                return round(elemento['distance']['value'] / 1000, 1)
+        except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+            app.logger.warning('Distance Matrix falló: %s', e)
+
+    distancia_cliente = _float_o_none(distancia_cliente)
+    if distancia_cliente and 0 < distancia_cliente < 10000:
+        return round(distancia_cliente, 1)
+
+    if coords and all(c is not None for c in coords):
+        return round(_haversine_km(*coords) * 1.25, 1)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Flujo del cotizador: protección de pasos
+# ---------------------------------------------------------------------------
+
+def requiere(*claves):
+    """Redirige al paso 1 si faltan datos de pasos anteriores en la sesión."""
+    def decorador(vista):
+        @wraps(vista)
+        def envoltura(*args, **kwargs):
+            if 'cotizacion' not in session:
+                flash('Primero cotiza tu envío.', 'info')
+                return redirect(url_for('index'))
+            if 'contactos' in claves and 'contactos' not in session:
+                flash('Completa los datos de remitente y destinatario.', 'info')
+                return redirect(url_for('completar'))
+            return vista(*args, **kwargs)
+        return envoltura
+    return decorador
+
+
+def paso_desde_sesion():
+    return 3 if 'contactos' in session else 2 if 'cotizacion' in session else 1
+
+
+# ---------------------------------------------------------------------------
+# Sitio web
+# ---------------------------------------------------------------------------
+
 @app.route('/')
 def home():
-    return render_template('html/Inicio.html')
+    return render_template('sitio/inicio.html')
 
-# --- Sistema paquetería bajo /app ---
+
+@app.route('/inicio')
+def inicio():
+    return redirect(url_for('home'), 301)
+
+
+@app.route('/contacto', methods=['POST'])
+def contacto():
+    nombre = request.form.get('nombre', '').strip()[:120]
+    correo = request.form.get('correo', '').strip()[:160]
+    mensaje = request.form.get('mensaje', '').strip()[:3000]
+    if not nombre or not RE_CORREO.match(correo) or len(mensaje) < 10:
+        flash('Revisa tu nombre, un correo válido y un mensaje de al menos 10 caracteres.', 'danger')
+        return redirect(url_for('home', _anchor='contacto'))
+    db.guardar_mensaje(nombre, correo, mensaje)
+    flash('¡Gracias! Recibimos tu mensaje y te responderemos pronto.', 'success')
+    return redirect(url_for('home', _anchor='contacto'))
+
+
+@app.route('/iniciar-sesion')
+def login():
+    return render_template('sitio/login.html')
+
+
+@app.route('/formulario')
+def formulario():
+    return redirect(url_for('login'), 301)
+
+
+@app.route('/rastreo')
+def rastreo():
+    guia = (request.args.get('guia') or request.args.get('tracking') or '').strip().upper()
+    envio = error = None
+    if guia:
+        if not RE_GUIA.match(guia):
+            error = 'El número de guía solo puede contener letras, números y guiones.'
+        else:
+            envio = db.obtener_envio(guia)
+            if not envio:
+                error = f'No encontramos la guía {guia}. Verifica que esté escrita correctamente.'
+    return render_template('sitio/rastreo.html', guia=guia, envio=envio, error=error,
+                           estados=db.ESTADOS, estados_idx=db.ESTADOS_IDX)
+
+
+# ---------------------------------------------------------------------------
+# Cotizador
+# ---------------------------------------------------------------------------
 
 @app.route('/app/')
 def index():
-    return render_template('index.html', paso_actual=1)
+    datos = dict(session.get('formulario', {}))
+    for campo in ('origen', 'destino', 'peso'):
+        if request.args.get(campo):
+            datos[campo] = request.args[campo][:200]
+    return render_template('cotizador/cotizar.html', paso_actual=1, datos=datos, errores={})
+
+
+@app.route('/app/api/cotizar', methods=['POST'])
+def api_cotizar():
+    """Cotización en vivo para el formulario. Usa exactamente la misma lógica que el cálculo final."""
+    d = request.get_json(silent=True) or {}
+    try:
+        cot = tarifas.cotizar(
+            distancia_km=d.get('distancia_km') or 0,
+            peso=d.get('peso'), largo=d.get('largo'), ancho=d.get('ancho'), alto=d.get('alto'),
+            caja=d.get('caja') or 'propia', tipo_envio=d.get('tipo_envio') or 'eco',
+            compensar_co2=bool(d.get('compensar')),
+        )
+    except tarifas.ErrorCotizacion as e:
+        return jsonify(ok=False, error=str(e)), 422
+    return jsonify(ok=True, cotizacion=cot.to_dict(), distancia_estimada=bool(d.get('distancia_km')),
+                   cajas_disponibles=tarifas.cajas_disponibles(cot.largo, cot.ancho, cot.alto, cot.peso_real))
+
 
 @app.route('/app/calculate', methods=['POST'], endpoint='calculate')
 def calcular_envio():
-    origin = request.form.get('origin')
-    destination = request.form.get('destination')
-    tipo_entrega = request.form.get('tipo_entrega')
-    email = request.form.get('email')
-    weight = float(request.form.get('weight'))
-    length = float(request.form.get('length'))
-    width = float(request.form.get('width'))
-    height = float(request.form.get('height'))
-    lat = request.form.get('lat')
-    lon = request.form.get('lon')
-    eco_packaging = request.form.get('eco_packaging')
-    shipping_type = request.form.get('shipping_type')
-    compensate = request.form.get('compensate') == 'yes'
-    box_choice = request.form.get('box_choice')
+    f = request.form
+    datos = {k: f.get(k, '').strip() for k in (
+        'origen', 'destino', 'peso', 'largo', 'ancho', 'alto', 'caja', 'tipo_entrega', 'tipo_envio',
+        'origen_lat', 'origen_lng', 'destino_lat', 'destino_lng', 'distancia_ruta_km')}
+    datos['compensar'] = f.get('compensar') == 'si'
+    errores = {}
 
-    sender_parts = descomponer_direccion(origin)
-    receiver_parts = descomponer_direccion(destination)
+    if len(datos['origen']) < 5:
+        errores['origen'] = 'Escribe la dirección de origen y elígela de la lista.'
+    if len(datos['destino']) < 5:
+        errores['destino'] = 'Escribe la dirección de destino y elígela de la lista.'
+    if datos['tipo_entrega'] not in tarifas.TIPOS_ENTREGA:
+        errores['tipo_entrega'] = 'Elige cómo nos entregarás el paquete.'
 
-    session['sender_street'] = sender_parts['street']
-    session['sender_neighborhood'] = sender_parts['neighborhood']
-    session['sender_city'] = sender_parts['city']
-    session['sender_state'] = sender_parts['state']
+    distancia = None
+    if not errores:
+        coords = [_float_o_none(datos[k]) for k in ('origen_lat', 'origen_lng', 'destino_lat', 'destino_lng')]
+        distancia = calcular_distancia_km(datos['origen'], datos['destino'], coords, datos['distancia_ruta_km'])
+        if distancia is None:
+            errores['destino'] = ('No pudimos calcular la distancia entre esas direcciones. Intenta de nuevo en unos '
+                                  'minutos o contáctanos para cotizar por teléfono.')
 
-    session['receiver_street'] = receiver_parts['street']
-    session['receiver_neighborhood'] = receiver_parts['neighborhood']
-    session['receiver_city'] = receiver_parts['city']
-    session['receiver_state'] = receiver_parts['state']
+    cot = None
+    if not errores:
+        try:
+            cot = tarifas.cotizar(distancia_km=distancia, peso=datos['peso'], largo=datos['largo'],
+                                  ancho=datos['ancho'], alto=datos['alto'], caja=datos['caja'] or 'propia',
+                                  tipo_envio=datos['tipo_envio'], compensar_co2=datos['compensar'])
+        except tarifas.ErrorCotizacion as e:
+            errores['general'] = str(e)
 
-    distance_km = 100
-    try:
-        response = requests.get(
-            'https://maps.googleapis.com/maps/api/distancematrix/json',
-            params={'origins': origin, 'destinations': destination, 'key': GOOGLE_MAPS_API_KEY}
-        )
-        data = response.json()
-        distance_meters = data['rows'][0]['elements'][0]['distance']['value']
-        distance_km = round(distance_meters / 1000, 2)
-    except Exception as e:
-        print("Error al obtener distancia:", e)
+    if errores:
+        return render_template('cotizador/cotizar.html', paso_actual=1, datos=datos, errores=errores), 400
 
-    costo_base = next(precio for rango, precio in DISTANCIA_TARIFAS if distance_km <= rango)
-    peso_extra = max(0, weight - 1)
-    costo_peso = peso_extra * COSTO_POR_KG_EXTRA
-    costo_caja = BOX_COSTS.get(box_choice, 0)
+    session['formulario'] = datos
+    session['cotizacion'] = {
+        'origen': datos['origen'],
+        'destino': datos['destino'],
+        'tipo_entrega': datos['tipo_entrega'],
+        'origen_partes': descomponer_direccion(datos['origen']),
+        'destino_partes': descomponer_direccion(datos['destino']),
+        'detalle': cot.to_dict(),
+    }
+    session.pop('contactos', None)
+    return redirect(url_for('resultado'))
 
-    costo_extra = 0
-    if shipping_type == 'fast':
-        costo_extra += COSTO_ENVIO_EXPRES
-    if compensate:
-        costo_extra += COSTO_CO2
 
-    cost = round(costo_base + costo_peso + costo_caja + costo_extra, 2)
-    dias_estimados = 1 if shipping_type == 'fast' else 3
-    delivery_date = (datetime.now() + timedelta(days=dias_estimados)).strftime('%Y-%m-%d')
-    co2_emission = round(weight * distance_km * 0.21 / 1000, 2)
+@app.route('/app/cotizacion')
+@requiere('cotizacion')
+def resultado():
+    return render_template('cotizador/resultado.html', paso_actual=2, c=session['cotizacion'])
 
-    session['costo_estimado'] = cost
-    session['fecha_entrega_estimada'] = delivery_date
-    session['weight'] = weight 
 
-    return render_template(
-        'result.html',
-        origin=origin,
-        tipo_entrega=tipo_entrega,
-        destination=destination,
-        email=email,
-        cost=cost,
-        delivery_date=delivery_date,
-        lat=lat,
-        lon=lon,
-        eco_packaging=eco_packaging,
-        shipping_type=shipping_type,
-        co2_emission=co2_emission,
-        distance_km=distance_km,
-        compensated=compensate,
-        box_choice=box_choice,
-        weight=weight,
-        length=length,
-        width=width,
-        height=height,
-        paso_actual=2
-    )
+def _leer_persona(prefijo, f, errores, con_referencias=False):
+    p = {k: f.get(f'{prefijo}_{k}', '').strip()[:200] for k in
+         ('nombre', 'telefono', 'calle', 'colonia', 'ciudad', 'estado', 'cp')}
+    p['telefono'] = re.sub(r'\D', '', p['telefono'])
+    for campo in ('nombre', 'calle', 'colonia', 'ciudad', 'estado'):
+        if len(p[campo]) < 2:
+            errores[f'{prefijo}_{campo}'] = 'Este campo es obligatorio.'
+    if not RE_TELEFONO.match(p['telefono']):
+        errores[f'{prefijo}_telefono'] = 'Escribe un teléfono de 10 dígitos.'
+    if not RE_CP.match(p['cp']):
+        errores[f'{prefijo}_cp'] = 'El código postal debe tener 5 dígitos.'
+    if con_referencias:
+        p['referencias'] = f.get(f'{prefijo}_referencias', '').strip()[:300]
+        p['correo'] = f.get(f'{prefijo}_correo', '').strip()[:160]
+        if p['correo'] and not RE_CORREO.match(p['correo']):
+            errores[f'{prefijo}_correo'] = 'Escribe un correo válido o déjalo vacío.'
+    return p
+
 
 @app.route('/app/completar', methods=['GET', 'POST'])
+@requiere('cotizacion')
 def completar():
+    c = session['cotizacion']
     if request.method == 'POST':
-        session['sender_name'] = request.form.get('sender_name', '')
-        session['sender_phone'] = request.form.get('sender_phone', '')
-        session['sender_street'] = request.form.get('sender_street', '')
-        session['sender_neighborhood'] = request.form.get('sender_neighborhood', '')
-        session['sender_city'] = request.form.get('sender_city', '')
-        session['sender_state'] = request.form.get('sender_state', '')
-
-        session['receiver_name'] = request.form.get('receiver_name', '')
-        session['receiver_phone'] = request.form.get('receiver_phone', '')
-        session['receiver_street'] = request.form.get('receiver_street', '')
-        session['receiver_neighborhood'] = request.form.get('receiver_neighborhood', '')
-        session['receiver_city'] = request.form.get('receiver_city', '')
-        session['receiver_state'] = request.form.get('receiver_state', '')
-        session['receiver_references'] = request.form.get('receiver_references', '')
-
-        session['costo_estimado'] = request.form.get('costo_estimado', session.get('costo_estimado', 'No definido'))
-        session['fecha_entrega_estimada'] = request.form.get('fecha_entrega_estimada', session.get('fecha_entrega_estimada', 'No definida'))
-
+        errores = {}
+        remitente = _leer_persona('remitente', request.form, errores)
+        destinatario = _leer_persona('destinatario', request.form, errores, con_referencias=True)
+        if errores:
+            return render_template('cotizador/completar.html', paso_actual=3, c=c, errores=errores,
+                                   remitente=remitente, destinatario=destinatario), 400
+        session['contactos'] = {'remitente': remitente, 'destinatario': destinatario}
         return redirect(url_for('pago'))
 
-    return render_template(
-        'completar.html',
-        paso_actual=3,
-        sender_street=session.get('sender_street', ''),
-        sender_neighborhood=session.get('sender_neighborhood', ''),
-        sender_city=session.get('sender_city', ''),
-        sender_state=session.get('sender_state', ''),
-        receiver_street=session.get('receiver_street', ''),
-        receiver_neighborhood=session.get('receiver_neighborhood', ''),
-        receiver_city=session.get('receiver_city', ''),
-        receiver_state=session.get('receiver_state', '')
-    )
+    previos = session.get('contactos', {})
+    return render_template('cotizador/completar.html', paso_actual=3, c=c, errores={},
+                           remitente=previos.get('remitente', c['origen_partes']),
+                           destinatario=previos.get('destinatario', c['destino_partes']))
+
 
 @app.route('/app/pago')
+@requiere('cotizacion', 'contactos')
 def pago():
-    resumen = {
-        'sender_name': session.get('sender_name', ''),
-        'sender_phone': session.get('sender_phone', ''),
-        'sender_street': session.get('sender_street', ''),
-        'sender_neighborhood': session.get('sender_neighborhood', ''),
-        'sender_city': session.get('sender_city', ''),
-        'sender_state': session.get('sender_state', ''),
-        'receiver_name': session.get('receiver_name', ''),
-        'receiver_phone': session.get('receiver_phone', ''),
-        'receiver_street': session.get('receiver_street', ''),
-        'receiver_neighborhood': session.get('receiver_neighborhood', ''),
-        'receiver_city': session.get('receiver_city', ''),
-        'receiver_state': session.get('receiver_state', ''),
-        'receiver_references': session.get('receiver_references', ''),
-        'cost': session.get('costo_estimado', 'No definido'),
-        'delivery_date': session.get('fecha_entrega_estimada', 'No definida')
-    }
-    return render_template('pago.html', resumen=resumen, paso_actual=4)
+    return render_template('cotizador/pago.html', paso_actual=4, c=session['cotizacion'],
+                           contactos=session['contactos'])
+
 
 @app.route('/app/procesar_pago', methods=['POST'])
+@requiere('cotizacion', 'contactos')
 def procesar_pago():
+    if not app.config['PAGOS_SIMULADOS']:
+        flash('El pago en línea aún no está disponible. Contáctanos para completar tu envío.', 'warning')
+        return redirect(url_for('pago'))
     return redirect(url_for('fake_checkout'))
 
-@app.route('/app/fake_checkout', methods=['GET', 'POST'])
-def fake_checkout():
-    resumen = {
-        'cost': session.get('costo_estimado', 'No definido'),
-        'sender_name': session.get('sender_name', ''),
-        'receiver_name': session.get('receiver_name', '')
-    }
 
+@app.route('/app/checkout', methods=['GET', 'POST'], endpoint='fake_checkout')
+@requiere('cotizacion', 'contactos')
+def checkout_simulado():
+    if not app.config['PAGOS_SIMULADOS']:
+        abort(404)
+    c = session['cotizacion']
     if request.method == 'POST':
-        resultado = request.form.get('resultado')
-        if resultado == 'success':
-            return redirect(url_for('pago_exitoso'))
-        elif resultado == 'failure':
+        resultado_pago = request.form.get('resultado')
+        if resultado_pago == 'failure':
             return redirect(url_for('pago_fallido'))
-        else:
+        if resultado_pago != 'success':
             return redirect(url_for('pago_pendiente'))
 
-    return render_template('fake_checkout.html', resumen=resumen)
+        contactos = session['contactos']
+        guia = db.crear_envio(
+            remitente=contactos['remitente'], destinatario=contactos['destinatario'],
+            cotizacion=c['detalle'], tipo_entrega=c['tipo_entrega'],
+            correo_destinatario=contactos['destinatario'].get('correo'),
+        )
+        session['mis_guias'] = (session.get('mis_guias', []) + [guia])[-20:]
+        for clave in ('cotizacion', 'contactos', 'formulario'):
+            session.pop(clave, None)
+        return redirect(url_for('confirmado', guia=guia))
 
-@app.route('/app/pago_exitoso')
-def pago_exitoso():
-    tracking_code = f"BLL-{str(uuid.uuid4())[:8].upper()}"
-    session['tracking'] = tracking_code
-
-    data = {
-        'nombre_rem': session.get('sender_name', ''),
-        'origen': f"{session.get('sender_street', '')}, {session.get('sender_city', '')}, {session.get('sender_state', '')}",
-        'nombre_dest': session.get('receiver_name', ''),
-        'destino': f"{session.get('receiver_street', '')}, {session.get('receiver_city', '')}, {session.get('receiver_state', '')}",
-        'peso': session.get('weight', 'N/A'),
-        'costo': session.get('costo_estimado', 'N/A'),
-        'fecha_entrega': session.get('fecha_entrega_estimada', 'N/A')
-    }
-
-    ruta_pdf = generar_guia_pdf(data, tracking_code)
-    session['ruta_pdf'] = ruta_pdf  # 🔧 aquí lo guardas en la sesión
-    print("PDF generado y guardado en sesión:", session.get('pdf_buf') is not None)
-
-
-    return render_template('pago_exitoso.html',
-                           sender_name=data['nombre_rem'],
-                           receiver_name=data['nombre_dest'],
-                           tracking=tracking_code)
+    return render_template('cotizador/checkout_simulado.html', c=c, contactos=session['contactos'])
 
 
 @app.route('/app/pago_fallido')
 def pago_fallido():
-    return render_template('pago_fallido.html')
+    return render_template('cotizador/estado_pago.html', estado='fallido')
+
 
 @app.route('/app/pago_pendiente')
 def pago_pendiente():
-    return render_template('pago_pendiente.html')
+    return render_template('cotizador/estado_pago.html', estado='pendiente')
 
-class PDFDHLStyle(FPDF):
-    def header(self):
-        try:
-            self.image('static/Balula logo.png', 10, 8, 40)  # Cambia a tu logo DHL o quita si no tienes
-        except:
-            pass
-        self.set_draw_color(204, 0, 0)  # rojo DHL
-        self.set_line_width(5)
-        self.line(10, 35, 200, 35)
-        self.ln(30)
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.set_text_color(128)
-        fecha = datetime.now().strftime('%d/%m/%Y %H:%M')
-        self.cell(0, 10, f'Guía generada el {fecha} - Página {self.page_no()}', align='C')
+def _guia_propia(guia):
+    guia = guia.upper()
+    if guia not in session.get('mis_guias', []):
+        abort(404)
+    envio = db.obtener_envio(guia)
+    if not envio:
+        abort(404)
+    return envio
 
-def generar_guia_pdf(data, tracking_code):
-    pdf = PDFDHLStyle()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
 
-    # Encabezado
-    pdf.set_font("Arial", 'B', 20)
-    pdf.set_text_color(0)
-    pdf.cell(0, 15, "GUÍA DE ENVÍO BALULA", ln=True, align='C')
-    pdf.ln(5)
+def url_rastreo_publica(guia):
+    base = app.config['PUBLIC_BASE_URL'] or request.url_root.rstrip('/')
+    return f"{base}{url_for('rastreo', guia=guia)}"
 
-    # Código de rastreo
-    pdf.set_font("Arial", 'B', 14)
-    pdf.set_fill_color(230, 230, 230)
-    pdf.cell(0, 12, f"CÓDIGO DE RASTREO: {tracking_code}", border=1, ln=True, align='C', fill=True)
-    pdf.ln(10)
 
-    # Sección Remitente / Destinatario
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(95, 10, "REMITENTE", border=1, align='C')
-    pdf.cell(0, 10, "DESTINATARIO", border=1, align='C', ln=True)
+@app.route('/app/envio/<guia>')
+def confirmado(guia):
+    envio = _guia_propia(guia)
+    return render_template('cotizador/confirmado.html', envio=envio, url_rastreo=url_rastreo_publica(envio['guia']))
 
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(95, 10, data.get('nombre_rem', ''), border=1)
-    pdf.cell(0, 10, data.get('nombre_dest', ''), border=1, ln=True)
 
-    y_before = pdf.get_y()
-    pdf.multi_cell(95, 10, data.get('origen', ''), border=1)
-    y_after = pdf.get_y()
-
-    pdf.set_xy(105, y_before)
-    pdf.multi_cell(95, 10, data.get('destino', ''), border=1)
-
-    pdf.set_y(max(y_after, pdf.get_y()) + 5)
-
-    # Línea divisoria
-    pdf.set_draw_color(150)
-    pdf.set_line_width(0.5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(8)
-
-    # Información del envío
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "DETALLES DEL ENVÍO", ln=True)
-
-    pdf.set_font("Arial", '', 11)
-    pdf.cell(60, 8, f"Peso: {data.get('peso', 'N/A')} kg", ln=False)
-    pdf.cell(80, 8, f"Costo estimado: ${data.get('costo', 'N/A')}", ln=False)
-    pdf.cell(0, 8, f"Entrega estimada: {data.get('fecha_entrega', 'N/A')}", ln=True)
-
-    pdf.ln(12)
-
-    # Footer info
-    pdf.set_font("Arial", 'I', 10)
-    pdf.multi_cell(0, 8, "Gracias por elegir Balula. Esta guía es válida como comprobante de envío. Para seguimiento, escanee el código QR o visite nuestro sitio web.")
-    pdf.ln(5)
-
-    # 📌 Generar QR con URL al rastreo
-    qr_url = f"http://localhost:5001/rastreo?tracking={tracking_code}"
-    qr_img = qrcode.make(qr_url)
-    qr_path = os.path.join(PDF_FOLDER, f"qr_{tracking_code}.png")
-    qr_img.save(qr_path)
-
-    # Insertar QR en el PDF (parte inferior)
-    pdf.ln(5)
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 10, "Escanea para rastrear tu paquete:", ln=True)
-    pdf.image(qr_path, x=80, w=50)  # Centrado aproximadamente
-
-    # Agregar botón clickeable para redirigir al rastreo
-    link_url = qr_url
-    x_btn = 60
-    y_btn = pdf.get_y() + 10
-    w_btn = 90
-    h_btn = 12
-
-    # Dibujar rectángulo del botón (morado)
-    pdf.set_fill_color(108, 85, 249)
-    pdf.rect(x_btn, y_btn, w_btn, h_btn, style='F')
-
-    # Texto blanco centrado dentro del botón
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_xy(x_btn, y_btn + 3)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(w_btn, h_btn, "Rastrear paquete", border=0, align='C', link=link_url)
-
-    # Restaurar color texto negro para cualquier contenido futuro
-    pdf.set_text_color(0, 0, 0)
-
-    # Guardar PDF
-    ruta_pdf = os.path.join(PDF_FOLDER, f"guia_{tracking_code}.pdf")
-    pdf.output(ruta_pdf)
-    return ruta_pdf
+@app.route('/app/guia/<guia>.pdf')
+def descargar_guia(guia):
+    envio = _guia_propia(guia)
+    pdf = generar_guia_pdf(envio, url_rastreo_publica(envio['guia']))
+    return Response(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'attachment; filename=guia_{envio["guia"]}.pdf'})
 
 
 @app.route('/app/download/guia')
 def download_guia():
-    print("Entrando a /download/guia")
-    print("¿PDF está en sesión?:", 'pdf_buf' in session)
-    print("¿Tracking está en sesión?:", 'tracking' in session)
-    print("Tamaño del PDF:", len(session.get('pdf_buf', b'')))
-    ruta_pdf = session.get('ruta_pdf')
-    tracking = session.get('tracking')
+    guias = session.get('mis_guias', [])
+    if not guias:
+        abort(404)
+    return redirect(url_for('descargar_guia', guia=guias[-1]))
 
-    if not ruta_pdf or not tracking or not os.path.exists(ruta_pdf):
-        return "No hay guía generada", 404
 
-    return send_file(ruta_pdf,
-                     download_name=f"guia_{tracking}.pdf",
-                     as_attachment=True)
+@app.route('/app/nueva')
+def nueva_cotizacion():
+    for clave in ('cotizacion', 'contactos', 'formulario'):
+        session.pop(clave, None)
+    return redirect(url_for('index'))
 
-@app.route('/formulario')
-def formulario():
-    return render_template('html/formulario.html')
 
-@app.route('/inicio')
-def inicio():
-    return render_template('html/Inicio.html')
+# ---------------------------------------------------------------------------
+# Errores
+# ---------------------------------------------------------------------------
 
-@app.route('/rastreo')
-def rastreo():
-    return render_template('html/rastreo.html')
+@app.errorhandler(404)
+def no_encontrado(_e):
+    return render_template('sitio/error.html', codigo=404, titulo='Página no encontrada',
+                           mensaje='La página que buscas no existe o fue movida.'), 404
+
+
+@app.errorhandler(500)
+def error_interno(_e):
+    return render_template('sitio/error.html', codigo=500, titulo='Algo salió mal',
+                           mensaje='Tuvimos un problema al procesar tu solicitud. Intenta de nuevo en unos minutos.'), 500
+
+
+# ---------------------------------------------------------------------------
+# Comandos de operación
+# ---------------------------------------------------------------------------
+
+@app.cli.command('avanzar-envio')
+@click.argument('guia')
+@click.argument('estado', type=click.Choice([e[0] for e in db.ESTADOS]))
+@click.option('--ubicacion', default=None, help='Ej. "CEDIS Vallejo, CDMX"')
+@click.option('--descripcion', default=None, help='Texto que verá el cliente.')
+def avanzar_envio(guia, estado, ubicacion, descripcion):
+    """Registra un nuevo estado de rastreo para una guía."""
+    try:
+        db.registrar_evento(guia.upper(), estado, descripcion, ubicacion)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    click.echo(f'{guia.upper()} → {estado}')
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=os.getenv('FLASK_DEBUG') == '1', port=5001)

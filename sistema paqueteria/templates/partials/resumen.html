@@ -1,0 +1,24 @@
+{# Resumen lateral de los pasos 2–4. Espera `c` (session['cotizacion']). #}
+{% set d = c.detalle %}
+{% set servicio = tarifas.TIPOS_ENVIO[d.tipo_envio] %}
+<aside class="panel summary" aria-label="Resumen del envío">
+  <h2 class="panel-title mb-3"><i class="fa-solid fa-receipt"></i> Tu envío</h2>
+  <div class="route mb-2">
+    <div class="route-stop"><small>Origen</small>{{ c.origen }}</div>
+    <div class="route-stop end"><small>Destino</small>{{ c.destino }}</div>
+  </div>
+  <dl class="kv mb-3">
+    <dt>Servicio</dt><dd><i class="fa-solid {{ servicio.icono }} text-brand me-1"></i>{{ servicio.nombre }}</dd>
+    <dt>Entrega</dt><dd>{{ d.fecha_min | fecha }} – {{ d.fecha_max | fecha }}</dd>
+    <dt>Peso facturable</dt><dd>{{ d.peso_facturable }} kg</dd>
+  </dl>
+  <ul class="line-items">
+    {% for item in d.conceptos %}
+    <li><span><i class="fa-solid {{ item.icono }}"></i>{{ item.concepto }}</span><span>{{ item.importe | moneda }}</span></li>
+    {% endfor %}
+  </ul>
+  <div class="summary-total">
+    <span class="fw-semibold">Total <small class="text-muted fw-normal">MXN</small></span>
+    <span class="amount">{{ d.total | moneda }}</span>
+  </div>
+</aside>

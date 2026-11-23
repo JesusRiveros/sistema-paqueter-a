@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% set fallido = estado == 'fallido' %}
+{% block title %}{{ 'Pago rechazado' if fallido else 'Pago pendiente' }} · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      <div class="panel text-center">
+        <div class="success-mark neutral"><i class="fa-solid {{ 'fa-credit-card' if fallido else 'fa-hourglass-half' }}"></i></div>
+        {% if fallido %}
+        <h1 class="h3 mb-2">No pudimos procesar tu pago</h1>
+        <p class="text-muted mb-4">No se realizó ningún cargo. Verifica los datos de tu tarjeta o intenta con otro método de pago. Tu cotización sigue guardada.</p>
+        {% else %}
+        <h1 class="h3 mb-2">Tu pago está en proceso</h1>
+        <p class="text-muted mb-4">Algunos métodos de pago tardan unos minutos en confirmarse. En cuanto se acredite generaremos tu guía. Tu cotización sigue guardada.</p>
+        {% endif %}
+        <div class="d-grid d-sm-flex gap-2 justify-content-center">
+          {% if session.get('contactos') %}
+          <a href="{{ url_for('pago') }}" class="btn btn-primary">{{ 'Intentar de nuevo' if fallido else 'Volver al pago' }}</a>
+          {% endif %}
+          <a href="{{ url_for('home', _anchor='contacto') }}" class="btn btn-outline-primary">Contactar a soporte</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

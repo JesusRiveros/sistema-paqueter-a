@@ -1,0 +1,44 @@
+<footer class="site-footer">
+  <div class="container">
+    <div class="row gap-row">
+      <div class="col-lg-4">
+        <div class="brand mb-3">
+          <img src="{{ url_for('static', filename='img/logo-blanco.png') }}" alt="" width="36" height="36">
+          Balula Express
+        </div>
+        <p class="mb-4" style="max-width: 320px">Lo llevamos contigo hasta el final. Envíos rápidos, seguros y ecológicos a todo México.</p>
+        <a href="{{ url_for('index') }}" class="btn btn-light btn-sm">Cotizar envío</a>
+      </div>
+      <div class="col-6 col-lg-2">
+        <h5>Envíos</h5>
+        <ul>
+          <li><a href="{{ url_for('index') }}">Cotizar envío</a></li>
+          <li><a href="{{ url_for('rastreo') }}">Rastrear paquete</a></li>
+          <li><a href="{{ url_for('home', _anchor='como-funciona') }}">Cómo funciona</a></li>
+          <li><a href="{{ url_for('home', _anchor='tarifas') }}">Tarifas</a></li>
+        </ul>
+      </div>
+      <div class="col-6 col-lg-2">
+        <h5>Balula</h5>
+        <ul>
+          <li><a href="{{ url_for('home', _anchor='nosotros') }}">Nosotros</a></li>
+          <li><a href="{{ url_for('home', _anchor='servicios') }}">Servicios</a></li>
+          <li><a href="{{ url_for('home', _anchor='sustentabilidad') }}">Sustentabilidad</a></li>
+          <li><a href="{{ url_for('home', _anchor='contacto') }}">Contacto</a></li>
+        </ul>
+      </div>
+      <div class="col-lg-4">
+        <h5>Contáctanos</h5>
+        <ul>
+          <li><a href="tel:{{ contacto.telefono_href }}"><i class="fa-solid fa-phone me-2"></i>{{ contacto.telefono }}</a></li>
+          <li><a href="mailto:{{ contacto.correo }}"><i class="fa-regular fa-envelope me-2"></i>{{ contacto.correo }}</a></li>
+          <li><span><i class="fa-regular fa-clock me-2"></i>{{ contacto.horario }}</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="bottom d-flex flex-column flex-md-row justify-content-between gap-2">
+      <span>&copy; {{ anio_actual }} {{ contacto.empresa }}. Todos los derechos reservados.</span>
+      <span>Hecho en México <i class="fa-solid fa-heart" style="color: var(--b-400)"></i></span>
+    </div>
+  </div>
+</footer>

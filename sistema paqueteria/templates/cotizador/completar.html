@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}Datos del envío · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+
+{% macro campo(prefijo, datos, nombre, etiqueta, col='col-md-6', tipo='text', extra='', ayuda='', requerido=true, autocomplete='') -%}
+  {% set id = prefijo ~ '_' ~ nombre %}
+  <div class="{{ col }}">
+    <label class="form-label" for="{{ id }}">{{ etiqueta }}{% if not requerido %} <span class="text-muted fw-normal">(opcional)</span>{% endif %}</label>
+    <input type="{{ tipo }}" class="form-control {{ 'is-invalid' if errores.get(id) }}" id="{{ id }}" name="{{ id }}"
+           value="{{ datos.get(nombre, '') }}" {{ 'required' if requerido }} {{ extra | safe }}
+           {% if autocomplete %}autocomplete="{{ autocomplete }}"{% endif %}
+           {% if errores.get(id) %}aria-describedby="err-{{ id }}"{% endif %}>
+    {% if errores.get(id) %}<div class="invalid-feedback d-block" id="err-{{ id }}">{{ errores[id] }}</div>
+    {% else %}<div class="invalid-feedback">{{ ayuda or 'Este campo es obligatorio.' }}</div>{% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro persona(prefijo, datos, titulo, icono, seccion) -%}
+<section class="panel" aria-labelledby="t-{{ prefijo }}">
+  <h2 class="panel-title" id="t-{{ prefijo }}"><i class="fa-solid {{ icono }}"></i> {{ titulo }}</h2>
+  <div class="row g-3">
+    {{ campo(prefijo, datos, 'nombre', 'Nombre completo', extra='maxlength="120"', autocomplete=seccion ~ ' name') }}
+    {{ campo(prefijo, datos, 'telefono', 'Teléfono (10 dígitos)', tipo='tel', extra='inputmode="numeric" pattern="[0-9 ()-]{10,16}" maxlength="16" placeholder="55 1234 5678"', ayuda='Escribe un teléfono de 10 dígitos.', autocomplete=seccion ~ ' tel-national') }}
+    {{ campo(prefijo, datos, 'calle', 'Calle y número', col='col-md-8', extra='maxlength="200"', autocomplete=seccion ~ ' address-line1') }}
+    {{ campo(prefijo, datos, 'cp', 'Código postal', col='col-md-4', extra='inputmode="numeric" pattern="[0-9]{5}" maxlength="5"', ayuda='5 dígitos.', autocomplete=seccion ~ ' postal-code') }}
+    {{ campo(prefijo, datos, 'colonia', 'Colonia', col='col-md-4', extra='maxlength="120"', autocomplete=seccion ~ ' address-line2') }}
+    {{ campo(prefijo, datos, 'ciudad', 'Ciudad o municipio', col='col-md-4', extra='maxlength="120"', autocomplete=seccion ~ ' address-level2') }}
+    {{ campo(prefijo, datos, 'estado', 'Estado', col='col-md-4', extra='maxlength="80"', autocomplete=seccion ~ ' address-level1') }}
+    {{ caller() if caller }}
+  </div>
+</section>
+{%- endmacro %}
+
+{% block content %}
+<div class="container">
+  <header class="app-header">
+    <h1>¿Quién envía y quién recibe?</h1>
+    <p>Prellenamos las direcciones con lo que escribiste en la cotización; revísalas y completa lo que falte.</p>
+  </header>
+  {% include 'partials/stepper.html' %}
+
+  {% if errores %}
+  <div class="alert alert-danger" role="alert"><i class="fa-solid fa-circle-exclamation mt-1"></i><div>Revisa los campos marcados en rojo.</div></div>
+  {% endif %}
+
+  <form class="needs-validation" method="post" action="{{ url_for('completar') }}" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="row g-4">
+      <div class="col-lg-8">
+        {{ persona('remitente', remitente, 'Remitente', 'fa-arrow-up-from-bracket', 'section-remitente') }}
+
+        {% call persona('destinatario', destinatario, 'Destinatario', 'fa-house-flag', 'section-destinatario') %}
+          {{ campo('destinatario', destinatario, 'correo', 'Correo electrónico', col='col-12', tipo='email', extra='maxlength="160"', ayuda='Escribe un correo válido.', requerido=false, autocomplete='section-destinatario email') }}
+          <div class="col-12">
+            <label class="form-label" for="destinatario_referencias">Referencias para la entrega <span class="text-muted fw-normal">(opcional)</span></label>
+            <textarea class="form-control" id="destinatario_referencias" name="destinatario_referencias" rows="2" maxlength="300"
+                      placeholder="Ej. Entre calle X y Y, portón negro, tocar el timbre 2">{{ destinatario.get('referencias', '') }}</textarea>
+          </div>
+        {% endcall %}
+
+        <div class="d-flex flex-wrap justify-content-between gap-2 mt-4">
+          <a href="{{ url_for('resultado') }}" class="btn btn-ghost"><i class="fa-solid fa-arrow-left me-1"></i> Volver a la cotización</a>
+          <button type="submit" class="btn btn-primary btn-lg">Revisar y pagar <i class="fa-solid fa-arrow-right ms-1"></i></button>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        {% include 'partials/resumen.html' %}
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
