@@ -1,0 +1,15 @@
+# Configuración de Cloudflare Tunnel para Balula Express
+# Copia este archivo a:  C:\Users\<TU_USUARIO>\.cloudflared\config.yml
+# y reemplaza <UUID_DEL_TUNEL> y <TU_USUARIO> (el UUID lo imprime `cloudflared tunnel create balula`).
+
+tunnel: balula
+credentials-file: C:\Users\<TU_USUARIO>\.cloudflared\<UUID_DEL_TUNEL>.json
+
+ingress:
+  # La app corre localmente con Waitress en el puerto 5001 (python servir.py)
+  - hostname: balulaexpress.com
+    service: http://localhost:5001
+  - hostname: www.balulaexpress.com
+    service: http://localhost:5001   # la app redirige www → balulaexpress.com
+  # Cualquier otro nombre: 404
+  - service: http_status:404

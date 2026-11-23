@@ -2,6 +2,7 @@
 .venv/
 source/
 .env
+.balula_pids
 
 # Python
 __pycache__/

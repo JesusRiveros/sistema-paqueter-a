@@ -12,7 +12,10 @@
 #      flask --app app db upgrade
 #      flask --app app sembrar-demo          (imprime usuarios y contrasenas demo)
 # 5. Inicia la aplicacion (tambien aplica migraciones pendientes):
-#      python app.py
+#      python app.py          (desarrollo)
+#      python servir.py       (produccion con Waitress, para publicar con Cloudflare Tunnel)
+#    Publicar app + tunel juntos (desde la raiz):  powershell -ExecutionPolicy Bypass -File .\iniciar_balula.ps1
+#    Guia completa: docs/PUESTA_EN_MARCHA.md
 #    Sitio: http://127.0.0.1:5001/   Cotizador: /app/   Empresas: /empresas/
 #    Acceso repartidores/admin: /iniciar-sesion
 #
@@ -22,6 +25,7 @@
 #   flask --app app avanzar-envio BLL-XXXXXXXX en_transito --ubicacion "CEDIS Vallejo, CDMX"
 #   flask --app app asistente-costos      (tokens y costo promedio del asistente)
 #   flask --app app db migrate -m "..."   (despues de cambiar models.py)
+#   flask --app app respaldar-base        (copia de la base en instance/respaldos/)
 
 Flask>=3.0,<4.0
 python-dotenv>=1.0,<2.0
@@ -34,6 +38,7 @@ Flask-SQLAlchemy>=3.1,<4.0
 Flask-Migrate>=4.0,<5.0
 openpyxl>=3.1,<4.0
 stripe>=17.0,<18.0
+waitress>=3.0,<4.0
 
 # Solo para desarrollo
 pytest>=8.0

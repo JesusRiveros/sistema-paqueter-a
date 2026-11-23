@@ -50,6 +50,11 @@ app.config.update(
 os.makedirs(os.path.join(BASE_DIR, 'instance'), exist_ok=True)
 db.init_app(app)
 
+# Detrás de Cloudflare Tunnel: confiar en X-Forwarded-For/Proto/Host del proxy (un solo salto)
+if os.getenv('TRUST_PROXY', '0') == '1':
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 CONTACTO = {
     'empresa': 'Balula Express S.A. de C.V.',
     'direccion': 'Av. Industria #742, Bodega 5, Col. Industrial Vallejo, Alcaldía Azcapotzalco, C.P. 02300, Ciudad de México',
@@ -141,6 +146,36 @@ def verificar_csrf():
             return jsonify(ok=False, error='La sesión expiró. Recarga la página.'), 400
         flash('Tu sesión expiró. Intenta de nuevo.', 'warning')
         return redirect(request.referrer or url_for('home'))
+
+
+@app.before_request
+def dominio_canonico():
+    """www.balulaexpress.com → balulaexpress.com (301), para que sesiones y enlaces usen un solo dominio."""
+    publica = app.config['PUBLIC_BASE_URL']
+    if publica and request.host.startswith('www.') and request.host[4:] == publica.split('://', 1)[-1].split('/')[0]:
+        return redirect(publica + request.full_path.rstrip('?'), 301)
+
+
+@app.route('/salud')
+def salud():
+    """Estado del sistema para la lista de verificación (no expone secretos)."""
+    try:
+        db.sa.session.execute(db.sa.text('SELECT 1'))
+        base_ok = True
+    except Exception:
+        base_ok = False
+    return jsonify(
+        ok=base_ok,
+        base_de_datos='ok' if base_ok else 'error',
+        pagos=pagos.modo(),
+        stripe_webhook=bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
+        asistente=asistente.esta_configurado(),
+        google_maps=bool(app.config['GOOGLE_MAPS_API_KEY']),
+        twilio=bool(os.getenv('TWILIO_AUTH_TOKEN')),
+        correo_smtp=bool(os.getenv('SMTP_HOST')),
+        url_publica=app.config['PUBLIC_BASE_URL'] or None,
+        https=request.scheme == 'https',
+    ), 200 if base_ok else 503
 
 
 @app.after_request
@@ -643,6 +678,23 @@ def avanzar_envio(guia, estado, ubicacion, descripcion):
     except ValueError as e:
         raise click.ClickException(str(e))
     click.echo(f'{guia.upper()} → {estado}')
+
+
+@app.cli.command('respaldar-base')
+def respaldar_base():
+    """Copia la base SQLite (en caliente, de forma segura) a la carpeta respaldos/ junto a la base."""
+    import sqlite3
+    from datetime import datetime as _dt
+    url = db.sa.engine.url
+    if url.get_backend_name() != 'sqlite':
+        raise click.ClickException('Este comando es para SQLite. Con PostgreSQL usa pg_dump.')
+    from contextlib import closing
+    carpeta = os.path.join(os.path.dirname(os.path.abspath(url.database)), 'respaldos')
+    os.makedirs(carpeta, exist_ok=True)
+    destino = os.path.join(carpeta, f'balula-{_dt.now():%Y%m%d-%H%M%S}.sqlite3')
+    with closing(sqlite3.connect(url.database)) as origen, closing(sqlite3.connect(destino)) as copia:
+        origen.backup(copia)  # copia consistente aunque la app esté en uso
+    click.echo(f'Respaldo creado: {destino}')
 
 
 if __name__ == '__main__':
