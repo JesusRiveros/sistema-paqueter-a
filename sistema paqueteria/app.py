@@ -23,6 +23,7 @@ import notificaciones
 import reembolsos
 import repartidor
 import tarifas
+import voz_twilio
 from guia_pdf import generar_guia_pdf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +62,7 @@ app.register_blueprint(repartidor.bp)
 app.register_blueprint(admin.bp)
 app.register_blueprint(clientes.bp)
 app.register_blueprint(empresas.bp)
+app.register_blueprint(voz_twilio.bp)
 demo.registrar_comando(app)
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
@@ -126,6 +128,8 @@ def csrf_token():
 def verificar_csrf():
     if request.method != 'POST':
         return
+    if request.blueprint == 'voz_twilio':
+        return  # Twilio no envía token CSRF; esas rutas validan la firma de Twilio
     enviado = request.form.get('_csrf') or request.headers.get('X-CSRF-Token')
     if not enviado or not secrets.compare_digest(enviado, session.get('_csrf', '')):
         if request.is_json:
@@ -552,6 +556,7 @@ def asistente_mensaje():
 
     canal = datos.get('canal') if datos.get('canal') in ('web', 'voz') else 'web'
     cid = _conversacion_de_sesion(canal)
+    db.cambiar_canal(cid, canal)  # el cliente puede alternar entre escribir y hablar
     try:
         r = asistente.responder(cid, texto)
     except asistente.AsistenteNoConfigurado:

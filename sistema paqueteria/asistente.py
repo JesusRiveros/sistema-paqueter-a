@@ -76,7 +76,7 @@ Problemas, reembolsos y clientes molestos:
 - Tu trabajo es resolver, no transferir. Si el cliente está molesto, primero reconoce lo que siente y discúlpate en una frase, sin excusas; luego resuelve.
 - Para retrasos, paquetes dañados, entregas que no llegaron, paquetes perdidos, cobros duplicados o incorrectos y quejas del trato del repartidor, usa evaluar_compensacion. Necesitas el número de guía y los últimos 4 dígitos del teléfono del remitente o del destinatario; pídelos con naturalidad. Si el cliente quiere aviso por correo, pídele su correo.
 - La herramienta decide qué aplica según la política. Ofrece exactamente las opciones que devuelva, con sus montos, y pregunta cuál prefiere. Nunca inventes compensaciones ni montos.
-- Si la herramienta pide una foto del daño, comparte el enlace para subirla y espera a que el cliente te avise que ya la subió; luego vuelve a evaluar.
+- Si la herramienta pide una foto del daño, comparte el enlace para subirla y espera a que el cliente te avise que ya la subió; luego vuelve a evaluar. Por teléfono no puedes mostrar enlaces: pide su correo y vuelve a evaluar con él para que le llegue el enlace.
 - Si la evidencia muestra que el paquete sí se entregó, explícalo con amabilidad (quién recibió y a qué hora). Solo si el cliente no está de acuerdo, ofrécele la revisión.
 - Antes de cualquier acción con dinero, confirma con el cliente la opción elegida. Solo cuando la confirme en su mensaje, usa ejecutar_compensacion.
 - Si el resultado queda "pendiente de aprobación", di que una persona del equipo lo revisará, da el folio y el tiempo de respuesta. Si se aprueba un reembolso, di en cuánto tiempo se refleja. Si es un cupón, dicta el código.
@@ -295,12 +295,18 @@ def _turno_actual(ctx):
 
 def h_evaluar_compensacion(entrada, ctx):
     try:
-        return reembolsos.evaluar(conversacion_id=ctx['conversacion_id'], turno=_turno_actual(ctx),
-                                  guia=entrada['guia'], ultimos4_telefono=entrada['ultimos4_telefono'],
-                                  problema=entrada['problema'], detalle=entrada['detalle'],
-                                  correo_contacto=entrada['correo_contacto'])
+        r = reembolsos.evaluar(conversacion_id=ctx['conversacion_id'], turno=_turno_actual(ctx),
+                               guia=entrada['guia'], ultimos4_telefono=entrada['ultimos4_telefono'],
+                               problema=entrada['problema'], detalle=entrada['detalle'],
+                               correo_contacto=entrada['correo_contacto'])
     except reembolsos.ErrorCaso as e:
         return {'error': str(e)}
+    correo = entrada['correo_contacto'].strip()
+    if r.get('enlace_para_subir_foto') and '@' in correo:
+        import notificaciones
+        notificaciones.enviar_enlace_evidencia(r['guia'], correo, r['enlace_para_subir_foto'])
+        r['enlace_enviado_por_correo'] = correo
+    return r
 
 
 def h_ejecutar_compensacion(entrada, ctx):

@@ -398,6 +398,19 @@ img { max-width: 100%; height: auto; }
   .lula-fab span { display: none; }
   .lula-panel { position: fixed; inset: auto 8px 80px 8px; width: auto; height: calc(100vh - 100px); }
 }
+.lula-mic { border: 1px solid var(--b-200); width: 42px; height: 42px; border-radius: 50%; background: #fff; color: var(--b-600); flex: none; transition: all .15s; }
+.lula-mic:hover { background: var(--b-50); }
+.lula-mic.activo { background: var(--b-600); color: #fff; border-color: var(--b-600); animation: lula-pulso 1.4s infinite; }
+.lula-icon-btn.activo { background: #fff; color: var(--b-700); }
+@keyframes lula-pulso { 0% { box-shadow: 0 0 0 0 rgba(253, 55, 0, .45); } 70% { box-shadow: 0 0 0 12px rgba(253, 55, 0, 0); } 100% { box-shadow: 0 0 0 0 rgba(253, 55, 0, 0); } }
+.lula-escuchando { display: flex; align-items: center; gap: .6rem; padding: .55rem 1rem; background: var(--b-50); border-top: 1px solid var(--b-100); font-size: .88rem; color: var(--ink-2); }
+.lula-escuchando[hidden] { display: none; }
+.lula-ondas { display: inline-flex; gap: 3px; align-items: center; height: 18px; }
+.lula-ondas span { width: 3px; height: 100%; background: var(--b-500); border-radius: 3px; animation: lula-onda 1s infinite ease-in-out; }
+.lula-ondas span:nth-child(2) { animation-delay: .15s; }
+.lula-ondas span:nth-child(3) { animation-delay: .3s; }
+.lula-ondas span:nth-child(4) { animation-delay: .45s; }
+@keyframes lula-onda { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
 @media print { .lula { display: none !important; } }
 
 /* ---------- Portal repartidor / admin ---------- */

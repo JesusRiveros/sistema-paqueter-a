@@ -100,3 +100,16 @@ def notificar_caso(caso):
     db.sa.session.add(Notificacion(guia=caso.guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
     db.sa.session.commit()
     return estado
+
+
+def enviar_enlace_evidencia(guia, para, ruta):
+    """Envía al cliente el enlace para subir la foto del daño (útil en llamadas telefónicas)."""
+    base = current_app.config['PUBLIC_BASE_URL'] or ''
+    url = base + ruta if base else url_for('rastreo', _external=True).rsplit('/rastreo', 1)[0] + ruta
+    asunto = f'Sube la foto de tu paquete {guia}'
+    cuerpo = (f'Hola:\n\nPara ayudarte con tu paquete {guia}, sube una foto donde se vea el daño en este enlace:\n{url}\n\n'
+              'Después avísanos en el chat o por teléfono. El enlace vence en 7 días.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado
