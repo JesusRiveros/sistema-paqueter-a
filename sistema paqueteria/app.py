@@ -342,11 +342,14 @@ def _leer_persona(prefijo, f, errores, con_referencias=False):
         errores[f'{prefijo}_telefono'] = 'Escribe un teléfono de 10 dígitos.'
     if not RE_CP.match(p['cp']):
         errores[f'{prefijo}_cp'] = 'El código postal debe tener 5 dígitos.'
+    p['correo'] = f.get(f'{prefijo}_correo', '').strip()[:160]
     if con_referencias:
         p['referencias'] = f.get(f'{prefijo}_referencias', '').strip()[:300]
-        p['correo'] = f.get(f'{prefijo}_correo', '').strip()[:160]
         if p['correo'] and not RE_CORREO.match(p['correo']):
             errores[f'{prefijo}_correo'] = 'Escribe un correo válido o déjalo vacío.'
+    elif not RE_CORREO.match(p['correo']):
+        # El correo de quien paga es obligatorio: ahí llegan el comprobante y los códigos de seguridad
+        errores[f'{prefijo}_correo'] = 'Escribe un correo válido.'
     return p
 
 

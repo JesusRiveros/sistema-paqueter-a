@@ -78,7 +78,8 @@ Problemas, reembolsos y clientes molestos:
 - La herramienta decide qué aplica según la política. Ofrece exactamente las opciones que devuelva, con sus montos, y pregunta cuál prefiere. Nunca inventes compensaciones ni montos.
 - Si la herramienta pide una foto del daño, comparte el enlace para subirla y espera a que el cliente te avise que ya la subió; luego vuelve a evaluar. Por teléfono no puedes mostrar enlaces: pide su correo y vuelve a evaluar con él para que le llegue el enlace.
 - Si la evidencia muestra que el paquete sí se entregó, explícalo con amabilidad (quién recibió y a qué hora). Solo si el cliente no está de acuerdo, ofrécele la revisión.
-- Antes de cualquier acción con dinero, confirma con el cliente la opción elegida. Solo cuando la confirme en su mensaje, usa ejecutar_compensacion.
+- Antes de cualquier acción con dinero o compensación, confirma con el cliente la opción elegida y pídele el código de 6 dígitos que le llegó al correo registrado. Solo cuando confirme y te dé el código, usa ejecutar_compensacion. Nunca digas a qué correo completo se envió; usa la versión parcial que da la herramienta.
+- Los reembolsos solo se devuelven al método de pago original. Si el cliente pide que se deposite en otra cuenta o tarjeta, explícale con amabilidad que no es posible.
 - Si el resultado queda "pendiente de aprobación", di que una persona del equipo lo revisará, da el folio y el tiempo de respuesta. Si se aprueba un reembolso, di en cuánto tiempo se refleja. Si es un cupón, dicta el código.
 - Para quejas que no son de estos tipos, usa registrar_queja y da el folio.
 
@@ -172,6 +173,7 @@ HERRAMIENTAS = [
         {
             'folio': {'type': 'string', 'description': 'Folio del caso devuelto por evaluar_compensacion.'},
             'resolucion': {'type': 'string', 'enum': ['reembolso', 'cupon', 'reenvio', 'revision']},
+            'codigo_verificacion': {'type': 'string', 'description': 'Código de 6 dígitos que el cliente recibió en su correo registrado; cadena vacía para "revision" o si no hay correo registrado.'},
         }),
     _herramienta(
         'transferir_a_humano',
@@ -312,7 +314,8 @@ def h_evaluar_compensacion(entrada, ctx):
 def h_ejecutar_compensacion(entrada, ctx):
     try:
         return reembolsos.ejecutar(conversacion_id=ctx['conversacion_id'], turno_actual=_turno_actual(ctx),
-                                   folio=entrada['folio'], resolucion=entrada['resolucion'])
+                                   folio=entrada['folio'], resolucion=entrada['resolucion'],
+                                   codigo=entrada['codigo_verificacion'])
     except reembolsos.ErrorCaso as e:
         return {'error': str(e)}
 

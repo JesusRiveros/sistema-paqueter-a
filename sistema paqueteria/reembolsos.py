@@ -12,7 +12,10 @@ devolución real a la tarjeta se hará cuando exista la integración con la pasa
 import secrets
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+import hashlib
+import hmac
+
+from sqlalchemy import func, or_, select
 
 import db
 import politicas
@@ -30,7 +33,9 @@ PROBLEMAS = {
 RESOLUCIONES = {'reembolso': 'Reembolso', 'cupon': 'Cupón de descuento', 'reenvio': 'Reenvío sin costo',
                 'revision': 'Revisión por una persona del equipo'}
 MAX_FALLOS_VERIFICACION = 3
-CONCEPTOS_NO_ENVIO = ('fa-box-open', 'fa-seedling')  # empaque y compensación de CO₂ no son "costo del envío"
+CONCEPTOS_NO_ENVIO = ('fa-box-open',)  # solo el empaque no es "costo del envío" (la compensación de CO₂ sí se devuelve)
+OTP_MINUTOS = 10
+OTP_MAX_INTENTOS = 3
 
 
 class ErrorCaso(ValueError):
@@ -44,16 +49,51 @@ def _fin_plazo(envio):
 
 
 def costo_envio(envio):
-    """Lo que se cobró por transportar (sin empaque ni CO₂), sin pasar de lo pagado."""
+    """Lo pagado menos el empaque, sin pasar de lo pagado."""
     conceptos = envio.cotizacion.get('conceptos') or []
     importe = sum(c['importe'] for c in conceptos if c.get('icono') not in CONCEPTOS_NO_ENVIO and c['importe'] > 0)
     return round(min(importe or envio.total, envio.total), 2)
 
 
-def _casos_recientes(telefono):
+def _casos_recientes(telefono, correo=None):
+    """Compensaciones automáticas del cliente en el periodo, contadas por teléfono O por correo
+    (así no se brinca el límite usando otro número)."""
     desde = datetime.now() - timedelta(days=int(politicas.obtener('ventana_dias_cliente')))
+    mismo_cliente = Caso.cliente_telefono == telefono
+    if correo:
+        mismo_cliente = or_(mismo_cliente, func.lower(Caso.cliente_correo) == correo.lower())
     return sa.session.scalar(select(func.count()).select_from(Caso).where(
-        Caso.cliente_telefono == telefono, Caso.estado == 'aprobado_auto', Caso.creado >= desde))
+        mismo_cliente, Caso.estado == 'aprobado_auto', Caso.creado >= desde))
+
+
+def correo_registrado(envio, rol):
+    """Correo que el cliente dejó al crear el envío (nunca el que dicta en el chat)."""
+    if rol == 'remitente':
+        correo = envio.remitente.get('correo')
+    else:
+        correo = envio.correo_destinatario or envio.destinatario.get('correo')
+    return (correo or '').strip().lower() or None
+
+
+def _hash_codigo(caso_folio, codigo):
+    from flask import current_app
+    clave = current_app.config['SECRET_KEY'].encode()
+    return hmac.new(clave, f'{caso_folio}:{codigo}'.encode(), hashlib.sha256).hexdigest()
+
+
+def enmascarar(correo):
+    usuario, _, dominio = correo.partition('@')
+    return f'{usuario[:1]}{"*" * max(2, len(usuario) - 1)}@{dominio}'
+
+
+def _enviar_codigo(caso, correo):
+    import notificaciones
+    codigo = f'{secrets.randbelow(10 ** 6):06d}'
+    caso.otp_hash = _hash_codigo(caso.folio, codigo)
+    caso.otp_expira = datetime.now() + timedelta(minutes=OTP_MINUTOS)
+    caso.otp_intentos = 0
+    sa.session.commit()
+    notificaciones.enviar_codigo_verificacion(caso.guia, correo, codigo, OTP_MINUTOS)
 
 
 def _evidencia_cliente(guia):
@@ -134,15 +174,29 @@ def evaluar(*, conversacion_id, turno, guia, ultimos4_telefono, problema, detall
     if not opciones:
         return base | {'aplica_compensacion': False}
 
+    correo_reg = correo_registrado(envio, rol)
     caso = Caso(folio=db.nuevo_folio('CS', Caso), guia=envio.guia, conversacion_id=conversacion_id,
-                cliente_telefono=telefono, cliente_rol=rol, correo_contacto=(correo_contacto or '').strip()[:160] or None,
+                cliente_telefono=telefono, cliente_rol=rol, cliente_correo=correo_reg,
+                correo_contacto=(correo_contacto or '').strip()[:160] or None,
                 problema=problema, detalle=(detalle or '').strip()[:1000], opciones=opciones, turno_propuesta=turno,
                 repartidor_id=envio.repartidor_id if problema == 'trato_repartidor' else None)
     sa.session.add(caso)
     sa.session.commit()
-    return base | {'aplica_compensacion': True, 'folio': caso.folio, 'opciones': opciones,
-                   'siguiente_paso': 'Explica las opciones y pregunta cuál prefiere. NO ejecutes nada hasta que el '
-                                     'cliente elija y confirme en su siguiente mensaje; entonces usa ejecutar_compensacion.'}
+    resultado = base | {'aplica_compensacion': True, 'folio': caso.folio, 'opciones': opciones}
+    if not any(o['resolucion'] != 'revision' for o in opciones):
+        return resultado | {'siguiente_paso': 'Explica la situación. Si el cliente no está de acuerdo y lo confirma, usa '
+                                              'ejecutar_compensacion con resolucion "revision" y codigo_verificacion vacío.'}
+    if not correo_reg:
+        return resultado | {'sin_correo_registrado': True,
+                            'siguiente_paso': 'Este envío no tiene un correo registrado para verificar al cliente, así que la '
+                                              'compensación quedará pendiente de revisión por una persona. Explica las opciones, '
+                                              'pregunta cuál prefiere y, cuando confirme, usa ejecutar_compensacion con '
+                                              'codigo_verificacion vacío.'}
+    _enviar_codigo(caso, correo_reg)
+    return resultado | {'codigo_enviado_a': enmascarar(correo_reg), 'codigo_vigencia_minutos': OTP_MINUTOS,
+                        'siguiente_paso': 'Explica las opciones y pregunta cuál prefiere. Por seguridad enviamos un código de 6 '
+                                          'dígitos al correo registrado: pídele que te lo dicte. NO ejecutes nada hasta que el '
+                                          'cliente elija, confirme y te dé el código en su siguiente mensaje.'}
 
 
 def _opcion(resolucion, monto=0.0, cupon_pct=None, descripcion=''):
@@ -258,7 +312,29 @@ def _aplicar(caso, envio):
     envio.eventos.append(Evento(estado=envio.estado, descripcion=f'Caso {caso.folio}: {RESOLUCIONES[caso.resolucion].lower()} aprobado'))
 
 
-def ejecutar(*, conversacion_id, turno_actual, folio, resolucion):
+def _validar_codigo(caso, codigo):
+    """Lanza ErrorCaso si el código no es válido. Máximo 3 intentos y 10 minutos; un solo uso."""
+    if caso.otp_intentos >= OTP_MAX_INTENTOS:
+        raise ErrorCaso('Se agotaron los intentos del código de seguridad para este caso.')
+    if not caso.otp_hash or not caso.otp_expira or datetime.now() > caso.otp_expira:
+        raise ErrorCaso('El código de seguridad venció. Vuelve a evaluar el caso para enviar uno nuevo al correo registrado.')
+    codigo = ''.join(ch for ch in str(codigo or '') if ch.isdigit())
+    if len(codigo) == 6 and hmac.compare_digest(caso.otp_hash, _hash_codigo(caso.folio, codigo)):
+        caso.otp_hash = None
+        return
+    caso.otp_intentos += 1
+    if caso.otp_intentos >= OTP_MAX_INTENTOS:
+        caso.estado, caso.motivo_estado = 'bloqueado', 'código de seguridad incorrecto 3 veces'
+        if caso.conversacion_id:
+            conv = sa.session.get(Conversacion, caso.conversacion_id)
+            conv.fallos_verificacion = max(conv.fallos_verificacion, MAX_FALLOS_VERIFICACION)
+        sa.session.commit()
+        raise ErrorCaso('Código incorrecto por tercera vez: el caso quedó bloqueado. Trátalo como sospecha de fraude y transfiere.')
+    sa.session.commit()
+    raise ErrorCaso(f'El código no coincide. Le quedan {OTP_MAX_INTENTOS - caso.otp_intentos} intentos.')
+
+
+def ejecutar(*, conversacion_id, turno_actual, folio, resolucion, codigo=''):
     caso = sa.session.scalar(select(Caso).where(Caso.folio == (folio or '').upper()))
     if not caso or caso.conversacion_id != conversacion_id:
         raise ErrorCaso('No existe ese caso en esta conversación.')
@@ -270,13 +346,19 @@ def ejecutar(*, conversacion_id, turno_actual, folio, resolucion):
     if not opcion:
         raise ErrorCaso(f'Esa opción no se ofreció. Opciones válidas: {", ".join(o["resolucion"] for o in caso.opciones)}.')
 
+    motivos = []
+    if resolucion != 'revision':
+        if caso.cliente_correo:
+            _validar_codigo(caso, codigo)
+        else:
+            motivos.append('no hay correo registrado para verificar al cliente')
+
     envio = db.obtener_envio_modelo(caso.guia)
     caso.resolucion = resolucion
     caso.monto = opcion['monto_mxn'] if resolucion == 'reembolso' else 0.0
     tope = min(float(politicas.obtener('reembolso_tope_mxn')), envio.total)
-    previos = _casos_recientes(caso.cliente_telefono)
+    previos = _casos_recientes(caso.cliente_telefono, caso.cliente_correo)
     limite = int(politicas.obtener('limite_casos_cliente'))
-    motivos = []
     if resolucion == 'revision':
         motivos.append('el cliente pidió revisión por una persona')
     if caso.monto > tope:
@@ -298,7 +380,7 @@ def ejecutar(*, conversacion_id, turno_actual, folio, resolucion):
     resultado = {'estado': 'aprobado', 'folio': caso.folio, 'resolucion': RESOLUCIONES[resolucion]}
     if resolucion == 'reembolso':
         resultado |= {'monto_mxn': caso.monto, 'se_refleja_en': politicas.obtener('tiempo_reflejo_reembolso'),
-                      'nota': 'Se devuelve al mismo método de pago.'}
+                      'nota': 'Se devuelve únicamente al método de pago original; no se puede enviar a otra cuenta o tarjeta.'}
     if caso.cupon_codigo:
         resultado |= {'codigo_cupon': caso.cupon_codigo, 'porcentaje': opcion['cupon_pct'],
                       'vigencia_dias': int(politicas.obtener('cupon_vigencia_dias')),

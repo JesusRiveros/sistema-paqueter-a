@@ -253,6 +253,10 @@ class Caso(sa.Model):
     conversacion_id: Mapped[str | None] = mapped_column(ForeignKey('conversaciones.id'))
     cliente_telefono: Mapped[str] = mapped_column(String(10), index=True)
     cliente_rol: Mapped[str] = mapped_column(String(20))          # remitente | destinatario
+    cliente_correo: Mapped[str | None] = mapped_column(String(160), index=True)  # correo REGISTRADO (no el que dicta en el chat)
+    otp_hash: Mapped[str | None] = mapped_column(String(64))       # código de 6 dígitos (solo se guarda su hash)
+    otp_expira: Mapped[datetime | None]
+    otp_intentos: Mapped[int] = mapped_column(default=0)
     correo_contacto: Mapped[str | None] = mapped_column(String(160))
     problema: Mapped[str] = mapped_column(String(40))
     detalle: Mapped[str] = mapped_column(Text)

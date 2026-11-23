@@ -89,7 +89,7 @@ def sembrar(password=None, semilla=2026):
                               largo=rnd.choice([20, 30, 40]), ancho=rnd.choice([15, 20, 30]), alto=rnd.choice([5, 10, 20]),
                               tipo_envio=tipo, compensar_co2=rnd.random() < 0.35, hoy=creado.date()).to_dict()
         guia = db.nuevo_codigo_guia()
-        envio = Envio(guia=guia, creado_en=creado, estado='creado', remitente=_persona('Tienda Demo Balula', origen, rnd),
+        envio = Envio(guia=guia, creado_en=creado, estado='creado', remitente=_persona('Tienda Demo Balula', origen, rnd) | {'correo': 'tienda.demo@balula.mx'},
                       destinatario=_persona(NOMBRES[i], d, rnd) | {'referencias': rnd.choice(['', 'Portón negro', 'Depto 3, tocar timbre 2', 'Frente a la farmacia'])},
                       cotizacion=cot, tipo_entrega='recolector', correo_destinatario=None, total=cot['total'],
                       codigo_entrega=f'{rnd.randint(0, 9999):04d}', origen_lat=origen[4], origen_lng=origen[5],

@@ -1,5 +1,6 @@
 """Reembolsos y compensaciones: reglas de negocio, confirmación, límites, admin, cupones y asistente."""
 import io
+import re
 import json
 from datetime import date, datetime, timedelta
 
@@ -14,7 +15,8 @@ from models import Caso, Conversacion, Cupon, Envio, Evidencia, Notificacion, Pr
 from test_asistente import ClaudeFalso, herramienta, respuesta, texto
 from test_flujo import hasta_pago
 
-REM = {'nombre': 'Tienda Demo', 'telefono': '5500001111', 'ciudad': 'Azcapotzalco', 'estado': 'CDMX', 'cp': '02300'}
+REM = {'nombre': 'Tienda Demo', 'telefono': '5500001111', 'ciudad': 'Azcapotzalco', 'estado': 'CDMX', 'cp': '02300',
+       'correo': 'tienda@ejemplo.com'}
 DEST = {'nombre': 'Luis Gómez', 'telefono': '5511223344', 'calle': 'Calle 1', 'colonia': 'Centro', 'ciudad': 'Cuauhtémoc',
         'estado': 'CDMX', 'cp': '06000'}
 
@@ -51,15 +53,24 @@ def conv(app, turnos=1):
         return cid
 
 
-def evaluar(app, cid, guia, problema, ultimos4='3344', turno=1, **kw):
+def codigo_recibido(app, para='tienda@ejemplo.com'):
+    with app.app_context():
+        n = sa.session.scalars(select(Notificacion).where(Notificacion.para == para, Notificacion.asunto.like('Tu código%'))
+                               .order_by(Notificacion.id.desc())).first()
+        return re.search(r'(\d{6})', n.asunto).group(1) if n else ''
+
+
+def evaluar(app, cid, guia, problema, ultimos4='1111', turno=1, **kw):
     with app.app_context():
         return rb.evaluar(conversacion_id=cid, turno=turno, guia=guia, ultimos4_telefono=ultimos4, problema=problema,
                           detalle=kw.get('detalle', 'detalle'), correo_contacto=kw.get('correo', ''))
 
 
-def ejecutar(app, cid, folio, resolucion, turno=2):
+def ejecutar(app, cid, folio, resolucion, turno=2, codigo=None):
+    if codigo is None:
+        codigo = codigo_recibido(app) if resolucion != 'revision' else ''
     with app.app_context():
-        return rb.ejecutar(conversacion_id=cid, turno_actual=turno, folio=folio, resolucion=resolucion)
+        return rb.ejecutar(conversacion_id=cid, turno_actual=turno, folio=folio, resolucion=resolucion, codigo=codigo)
 
 
 # ---------------------------------------------------------------- verificación
@@ -94,6 +105,18 @@ def test_retraso_mayor_cupon_20_o_reembolso_costo_envio(app):
     opciones = {o['resolucion']: o for o in r['opciones']}
     assert opciones['cupon']['cupon_pct'] == 20
     assert opciones['reembolso']['monto_mxn'] == 175.0  # 200 pagado - 25 de empaque
+
+
+def test_costo_del_envio_solo_descuenta_empaque_no_co2(app):
+    hace3 = (date.today() - timedelta(days=3)).isoformat()
+    guia = envio(app, fecha_max=hace3)
+    with app.app_context():
+        e = db.obtener_envio_modelo(guia)
+        e.cotizacion = dict(e.cotizacion, conceptos=e.cotizacion['conceptos'] + [{'concepto': 'CO2', 'importe': 5.0, 'icono': 'fa-seedling'}])
+        e.total = 205.0
+        sa.session.commit()
+    r = evaluar(app, conv(app), guia, 'retraso')
+    assert next(o for o in r['opciones'] if o['resolucion'] == 'reembolso')['monto_mxn'] == 180.0  # 205 - 25 de empaque
 
 
 def test_danado_pide_foto_y_luego_ofrece(app, client):
@@ -311,7 +334,7 @@ def test_asistente_reembolso_de_punta_a_punta(client, csrf, app):
         return json.loads(falso.llamadas[1]['messages'][-1]['content'][0]['content'])['folio']
 
     falso = ClaudeFalso([
-        respuesta(herramienta('evaluar_compensacion', {'guia': guia, 'ultimos4_telefono': '3344', 'problema': 'retraso',
+        respuesta(herramienta('evaluar_compensacion', {'guia': guia, 'ultimos4_telefono': '1111', 'problema': 'retraso',
                                                        'detalle': 'Llegó 3 días tarde', 'correo_contacto': ''})),
         respuesta(texto('Lo siento mucho. Puedo darte un cupón de 20% o reembolsarte $175. ¿Cuál prefieres?')),
     ])
@@ -321,7 +344,8 @@ def test_asistente_reembolso_de_punta_a_punta(client, csrf, app):
         assert '¿Cuál prefieres?' in r.get_json()['texto']
         folio = folio_de(falso)
         # Siguiente turno: el cliente confirma
-        falso.guion = [respuesta(herramienta('ejecutar_compensacion', {'folio': folio, 'resolucion': 'reembolso'}, 'tu_2')),
+        falso.guion = [respuesta(herramienta('ejecutar_compensacion', {'folio': folio, 'resolucion': 'reembolso',
+                                                                      'codigo_verificacion': codigo_recibido(app)}, 'tu_2')),
                        respuesta(texto('Listo, aprobado. Se refleja en 5 a 10 días hábiles.'))]
         falso.llamadas = []
         r = client.post('/api/asistente/mensaje', json={'texto': 'el reembolso por favor'}, headers={'X-CSRF-Token': csrf})
@@ -340,7 +364,7 @@ def test_asistente_no_puede_ejecutar_en_el_mismo_turno(client, csrf, app):
     falso = ClaudeFalso([
         respuesta(herramienta('evaluar_compensacion', {'guia': guia, 'ultimos4_telefono': '3344', 'problema': 'retraso',
                                                        'detalle': 'tarde', 'correo_contacto': ''})),
-        respuesta(herramienta('ejecutar_compensacion', {'folio': 'X', 'resolucion': 'reembolso'}, 'tu_2')),
+        respuesta(herramienta('ejecutar_compensacion', {'folio': 'X', 'resolucion': 'reembolso', 'codigo_verificacion': ''}, 'tu_2')),
         respuesta(texto('...')),
     ])
     asistente.asignar_cliente(falso)
@@ -350,7 +374,8 @@ def test_asistente_no_puede_ejecutar_en_el_mismo_turno(client, csrf, app):
         # El modelo intenta ejecutar con el folio real en el mismo turno: el código lo impide
         falso.guion = [respuesta(herramienta('evaluar_compensacion', {'guia': guia, 'ultimos4_telefono': '3344', 'problema': 'retraso',
                                                                      'detalle': 'tarde', 'correo_contacto': ''})),
-                       respuesta(herramienta('ejecutar_compensacion', {'folio': 'PLACEHOLDER', 'resolucion': 'reembolso'}, 'tu_9')),
+                       respuesta(herramienta('ejecutar_compensacion', {'folio': 'PLACEHOLDER', 'resolucion': 'reembolso',
+                                                                      'codigo_verificacion': '000000'}, 'tu_9')),
                        respuesta(texto('...'))]
         falso.llamadas = []
         orig = falso.create
@@ -367,3 +392,90 @@ def test_asistente_no_puede_ejecutar_en_el_mismo_turno(client, csrf, app):
         assert 'confirmación' in res['error']
     finally:
         asistente.asignar_cliente(None)
+
+
+# ---------------------------------------------------------------- código por correo (acciones con dinero)
+
+def _caso_retraso(app):
+    hace3 = (date.today() - timedelta(days=3)).isoformat()
+    cid = conv(app)
+    return cid, evaluar(app, cid, envio(app, fecha_max=hace3), 'retraso')
+
+
+def test_codigo_va_al_correo_registrado_no_al_del_chat(app):
+    hace3 = (date.today() - timedelta(days=3)).isoformat()
+    r = evaluar(app, conv(app), envio(app, fecha_max=hace3), 'retraso', correo='atacante@malo.com')
+    assert r['codigo_enviado_a'] == 't*****@ejemplo.com' and r['codigo_vigencia_minutos'] == 10
+    assert codigo_recibido(app, 'tienda@ejemplo.com') and not codigo_recibido(app, 'atacante@malo.com')
+
+
+def test_codigo_incorrecto_tres_veces_bloquea(app):
+    cid, r = _caso_retraso(app)
+    bueno = codigo_recibido(app)
+    malo = '000000' if bueno != '000000' else '111111'
+    for restantes in (2, 1):
+        with pytest.raises(rb.ErrorCaso, match=f'Le quedan {restantes}'):
+            ejecutar(app, cid, r['folio'], 'cupon', codigo=malo)
+    with pytest.raises(rb.ErrorCaso, match='bloqueado'):
+        ejecutar(app, cid, r['folio'], 'cupon', codigo=malo)
+    with pytest.raises(rb.ErrorCaso):
+        ejecutar(app, cid, r['folio'], 'cupon', codigo=bueno)  # ya no sirve ni el correcto
+    with app.app_context():
+        assert sa.session.scalar(select(Caso).where(Caso.folio == r['folio'])).estado == 'bloqueado'
+        assert sa.session.get(Conversacion, cid).fallos_verificacion >= rb.MAX_FALLOS_VERIFICACION
+
+
+def test_codigo_vence_en_10_minutos(app):
+    cid, r = _caso_retraso(app)
+    with app.app_context():
+        caso = sa.session.scalar(select(Caso).where(Caso.folio == r['folio']))
+        caso.otp_expira = datetime.now() - timedelta(seconds=1)
+        sa.session.commit()
+    with pytest.raises(rb.ErrorCaso, match='venció'):
+        ejecutar(app, cid, r['folio'], 'cupon')
+
+
+def test_codigo_correcto_ejecuta_y_es_de_un_solo_uso(app):
+    cid, r = _caso_retraso(app)
+    assert ejecutar(app, cid, r['folio'], 'cupon')['estado'] == 'aprobado'
+    with app.app_context():
+        assert sa.session.scalar(select(Caso).where(Caso.folio == r['folio'])).otp_hash is None
+
+
+def test_sin_correo_registrado_queda_pendiente(app):
+    hace3 = (date.today() - timedelta(days=3)).isoformat()
+    cid = conv(app)
+    r = evaluar(app, cid, envio(app, fecha_max=hace3), 'retraso', ultimos4='3344')  # destinatario sin correo
+    assert r['sin_correo_registrado'] is True and 'codigo_enviado_a' not in r
+    res = ejecutar(app, cid, r['folio'], 'cupon', codigo='')
+    assert res['estado'] == 'pendiente_de_aprobacion' and 'correo registrado' in res['motivo']
+
+
+def test_revision_no_pide_codigo(app):
+    guia = envio(app, 'entregado')
+    _prueba(app, guia)  # evidencia clara: solo revisión
+    cid = conv(app)
+    r = evaluar(app, cid, guia, 'entregado_no_recibido')
+    assert 'codigo_enviado_a' not in r
+    assert ejecutar(app, cid, r['folio'], 'revision')['estado'] == 'pendiente_de_aprobacion'
+
+
+def test_limite_cuenta_por_correo_aunque_cambie_el_telefono(app):
+    hace3 = (date.today() - timedelta(days=3)).isoformat()
+    estados = []
+    for telefono in ('5500000001', '5500000002', '5500000003'):  # tres números distintos, mismo correo
+        with app.app_context():
+            guia = db.crear_envio(remitente=REM | {'telefono': telefono}, destinatario=DEST, cotizacion=cot(fecha_max=hace3),
+                                  tipo_entrega='recolector', correo_destinatario=None)
+        cid = conv(app)
+        r = evaluar(app, cid, guia, 'retraso', ultimos4=telefono[-4:])
+        estados.append(ejecutar(app, cid, r['folio'], 'cupon')['estado'])
+    assert estados == ['aprobado', 'aprobado', 'pendiente_de_aprobacion']
+
+
+def test_reembolso_solo_al_metodo_original(app):
+    cid, r = _caso_retraso(app)
+    res = ejecutar(app, cid, r['folio'], 'reembolso')
+    assert 'método de pago original' in res['nota']
+    parametros = next(h for h in asistente.HERRAMIENTAS if h['name'] == 'ejecutar_compensacion')['input_schema']['properties']
+    assert set(parametros) == {'folio', 'resolucion', 'codigo_verificacion'}  # no hay forma de indicar otra cuenta

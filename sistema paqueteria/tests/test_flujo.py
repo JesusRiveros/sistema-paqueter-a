@@ -10,7 +10,7 @@ FORM_PASO1 = dict(origen='Av. Reforma 100, CDMX', destino='Av. Juárez 50, Guada
 def persona(prefijo, nombre):
     return {f'{prefijo}_nombre': nombre, f'{prefijo}_telefono': '55 1234 5678', f'{prefijo}_calle': 'Calle 1',
             f'{prefijo}_colonia': 'Centro', f'{prefijo}_ciudad': 'Guadalajara', f'{prefijo}_estado': 'Jalisco',
-            f'{prefijo}_cp': '44100'}
+            f'{prefijo}_cp': '44100', f'{prefijo}_correo': f'{prefijo}@ejemplo.com'}
 
 
 def hasta_pago(client, csrf):

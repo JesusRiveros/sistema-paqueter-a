@@ -194,7 +194,7 @@ def pagar(folio):
     if not current_app.config['PAGOS_SIMULADOS']:
         flash('El pago en línea aún no está disponible. Contáctanos para completar tu lote.', 'warning')
         return redirect(url_for('empresas.lote', folio=lote.folio))
-    rem = {k: v for k, v in lote.remitente.items() if k != 'geo'}
+    rem = {k: v for k, v in lote.remitente.items() if k != 'geo'} | {'correo': lote.correo}
     guias = []
     for r in lote.renglones:
         if not r['cotizacion']:

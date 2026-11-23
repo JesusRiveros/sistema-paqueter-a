@@ -113,3 +113,14 @@ def enviar_enlace_evidencia(guia, para, ruta):
     db.sa.session.add(Notificacion(guia=guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
     db.sa.session.commit()
     return estado
+
+
+def enviar_codigo_verificacion(guia, para, codigo, minutos):
+    asunto = f'Tu código de seguridad Balula: {codigo}'
+    cuerpo = (f'Tu código para confirmar la solicitud sobre el envío {guia} es:\n\n    {codigo}\n\n'
+              f'Vence en {minutos} minutos. Díselo solo a Lula, en el chat o por teléfono de Balula Express. '
+              'Si tú no lo pediste, ignora este correo: nadie podrá usarlo sin acceso a tu correo.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado

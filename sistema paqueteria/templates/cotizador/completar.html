@@ -48,7 +48,9 @@
     <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="row g-4">
       <div class="col-lg-8">
-        {{ persona('remitente', remitente, 'Remitente', 'fa-arrow-up-from-bracket', 'section-remitente') }}
+        {% call persona('remitente', remitente, 'Remitente', 'fa-arrow-up-from-bracket', 'section-remitente') %}
+          {{ campo('remitente', remitente, 'correo', 'Correo electrónico', col='col-12', tipo='email', extra='maxlength="160"', ayuda='Escribe un correo válido. Ahí te llegan el comprobante y los códigos de seguridad.', autocomplete='section-remitente email') }}
+        {% endcall %}
 
         {% call persona('destinatario', destinatario, 'Destinatario', 'fa-house-flag', 'section-destinatario') %}
           {{ campo('destinatario', destinatario, 'correo', 'Correo electrónico', col='col-12', tipo='email', extra='maxlength="160"', ayuda='Escribe un correo válido.', requerido=false, autocomplete='section-destinatario email') }}
