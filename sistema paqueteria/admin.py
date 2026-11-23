@@ -331,7 +331,9 @@ def reembolso_detalle(folio):
     envio = db.obtener_envio_modelo(caso.guia)
     _, evidencia_entrega = rb.evidencia_entrega(envio)
     fotos = sa.session.scalars(select(Evidencia).where(Evidencia.guia == caso.guia, Evidencia.archivo.is_not(None))).all()
+    objetivo = db.obtener_envio_modelo(caso.reembolso_guia or caso.guia)
     return render_template('admin/reembolso.html', caso=caso, envio=envio, problemas=rb.PROBLEMAS, resoluciones=rb.RESOLUCIONES,
+                           pago_original=objetivo.stripe_payment_intent if objetivo else None,
                            evidencia_entrega=evidencia_entrega, fotos=fotos,
                            repartidor=sa.session.get(Usuario, caso.repartidor_id) if caso.repartidor_id else None)
 
@@ -371,3 +373,24 @@ def politicas_vista():
             flash('Políticas actualizadas. Aplican desde este momento para nuevos casos.', 'success')
         return redirect(url_for('admin.politicas_vista'))
     return render_template('admin/politicas.html', politicas=politicas.POLITICAS, valores=politicas.todas())
+
+
+@bp.route('/reembolsos/<folio>/stripe', methods=['POST'])
+@login_requerido('admin')
+def reembolso_stripe(folio):
+    """Consulta el estado real del reembolso en Stripe, o lo reintenta si falló."""
+    import pagos
+    caso = sa.session.scalar(select(Caso).where(Caso.folio == folio)) or abort(404)
+    if caso.resolucion != 'reembolso' or caso.estado not in ('aprobado_auto', 'aprobado_admin'):
+        abort(400)
+    try:
+        if request.form.get('accion') == 'reintentar' and caso.reembolso_estado in ('error', 'failed', 'canceled'):
+            caso.stripe_refund_id = None
+            pagos.ejecutar_reembolso(caso, reintento=True)
+        else:
+            pagos.actualizar_estado_reembolso(caso)
+        sa.session.commit()
+        flash(f'Estado en Stripe: {caso.reembolso_estado}.', 'success' if caso.reembolso_estado != 'error' else 'danger')
+    except pagos.stripe.StripeError as e:
+        flash(f'Stripe respondió con un error: {e}', 'danger')
+    return redirect(url_for('admin.reembolso_detalle', folio=folio))

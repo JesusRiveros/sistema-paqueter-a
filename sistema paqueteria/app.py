@@ -29,6 +29,9 @@ from guia_pdf import generar_guia_pdf
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
 
+import pagos  # noqa: E402
+pagos.validar_llaves()  # con llaves sk_live_ el servidor se niega a arrancar
+
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_hex(32),
@@ -63,6 +66,7 @@ app.register_blueprint(admin.bp)
 app.register_blueprint(clientes.bp)
 app.register_blueprint(empresas.bp)
 app.register_blueprint(voz_twilio.bp)
+app.register_blueprint(pagos.bp)
 demo.registrar_comando(app)
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
@@ -111,6 +115,7 @@ def contexto_global():
         'tarifas': tarifas,
         'anio_actual': date.today().year,
         'nombres_estado': db.NOMBRE_ESTADO,
+        'modo_pago': pagos.modo(),
     }
 
 
@@ -128,8 +133,8 @@ def csrf_token():
 def verificar_csrf():
     if request.method != 'POST':
         return
-    if request.blueprint == 'voz_twilio':
-        return  # Twilio no envía token CSRF; esas rutas validan la firma de Twilio
+    if request.blueprint == 'voz_twilio' or request.endpoint == 'pagos.webhook':
+        return  # Twilio y Stripe no envían token CSRF; esas rutas validan la firma del servicio
     enviado = request.form.get('_csrf') or request.headers.get('X-CSRF-Token')
     if not enviado or not secrets.compare_digest(enviado, session.get('_csrf', '')):
         if request.is_json:
@@ -411,10 +416,30 @@ def aplicar_cupon():
 @app.route('/app/procesar_pago', methods=['POST'])
 @requiere('cotizacion', 'contactos')
 def procesar_pago():
-    if not app.config['PAGOS_SIMULADOS']:
+    modo = pagos.modo()
+    if modo == 'stripe':
+        c, contactos = cotizacion_con_cupon(), session['contactos']
+        try:
+            url = pagos.iniciar_checkout(
+                tipo='envio', datos={'cotizacion': c, 'contactos': contactos, 'cupon': session.get('cupon')},
+                total=c['detalle']['total'], correo=contactos['remitente'].get('correo'),
+                descripcion=f"Envío Balula: {contactos['remitente'].get('ciudad', '')} → {contactos['destinatario'].get('ciudad', '')}",
+                url_cancelar=url_for('pago_cancelado'))
+        except pagos.stripe.StripeError as e:
+            app.logger.error('No se pudo crear la sesión de Stripe: %s', e)
+            flash('No pudimos conectar con la pasarela de pago. Intenta de nuevo en un momento.', 'danger')
+            return redirect(url_for('pago'))
+        return redirect(url, 303)
+    if modo == 'no_disponible':
         flash('El pago en línea aún no está disponible. Contáctanos para completar tu envío.', 'warning')
         return redirect(url_for('pago'))
     return redirect(url_for('fake_checkout'))
+
+
+@app.route('/app/pago/cancelado')
+def pago_cancelado():
+    flash('Cancelaste el pago. Tu cotización sigue guardada; puedes intentarlo de nuevo.', 'info')
+    return redirect(url_for('pago') if 'contactos' in session else url_for('index'))
 
 
 @app.route('/app/checkout', methods=['GET', 'POST'], endpoint='fake_checkout')
@@ -437,6 +462,8 @@ def checkout_simulado():
             correo_destinatario=contactos['destinatario'].get('correo'),
             origen=c.get('origen_geo'), destino=c.get('destino_geo'),
         )
+        db.obtener_envio_modelo(guia).metodo_pago = 'simulado'
+        db.sa.session.commit()
         if session.get('cupon'):
             cupon, _ = reembolsos.validar_cupon(session.pop('cupon'))
             if cupon:

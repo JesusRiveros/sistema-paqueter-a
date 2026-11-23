@@ -2,6 +2,7 @@
 {% block title %}Reembolsos · Operaciones Balula{% endblock %}
 {% block titulo_pagina %}Reembolsos y compensaciones{% endblock %}
 {% set etiquetas = {'aprobado_auto': ('Aprobado por Lula', 'ok'), 'pendiente': ('Pendiente', 'riesgo-medio'), 'aprobado_admin': ('Aprobado por ti', 'ok'), 'rechazado': ('Rechazado', 'riesgo-alto')} %}
+{% set estados_reembolso = {'succeeded': ('Reembolsado', 'ok'), 'pending': ('En proceso', 'riesgo-medio'), 'requires_action': ('Requiere acción', 'riesgo-medio'), 'failed': ('Falló', 'riesgo-alto'), 'canceled': ('Cancelado', 'riesgo-alto'), 'error': ('Error al reembolsar', 'riesgo-alto'), 'manual': ('Devolución manual', '')} %}
 {% block admin %}
 <div class="row g-3 mb-3">
   {% for estado, texto in [('pendiente', 'Pendiente de aprobar'), ('aprobado_auto', 'Aprobado automáticamente'), ('aprobado_admin', 'Aprobado por el equipo')] %}
@@ -15,7 +16,7 @@
 </div>
 <div class="panel p-0" style="overflow-x: auto">
   <table class="tabla">
-    <thead><tr><th>Folio</th><th>Fecha</th><th>Guía</th><th>Problema</th><th>Resolución</th><th class="text-end">Monto</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Guía</th><th>Problema</th><th>Resolución</th><th class="text-end">Monto</th><th>Estado</th><th>Stripe</th></tr></thead>
     <tbody>
     {% for c in casos %}
       {% set et = etiquetas.get(c.estado, (c.estado, '')) %}
@@ -27,8 +28,9 @@
         <td>{{ resoluciones.get(c.resolucion, '—') }}{% if c.cupon_codigo %} · {{ c.cupon_codigo }}{% endif %}</td>
         <td class="text-end">{{ c.monto | moneda if c.monto else '—' }}</td>
         <td><span class="pill {{ et[1] }}">{{ et[0] }}</span></td>
+        <td>{% if c.reembolso_estado %}{% set er = estados_reembolso.get(c.reembolso_estado, (c.reembolso_estado, '')) %}<span class="pill {{ er[1] }}">{{ er[0] }}</span>{% else %}—{% endif %}</td>
       </tr>
-    {% else %}<tr><td colspan="7" class="text-muted p-4">No hay casos con este filtro.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" class="text-muted p-4">No hay casos con este filtro.</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

@@ -261,7 +261,8 @@ def _politica(envio, problema, conversacion_id):
             Envio.lote_folio.is_(None)).limit(20)) if envio.lote_folio is None else None
         if duplicado and duplicado.remitente.get('telefono') == envio.remitente.get('telefono') \
                 and duplicado.destinatario.get('cp') == envio.destinatario.get('cp') and duplicado.estado == 'creado':
-            return [_opcion('reembolso', duplicado.total, descripcion=f'Devolución del cobro duplicado (guía {duplicado.guia})')], \
+            return [_opcion('reembolso', duplicado.total, descripcion=f'Devolución del cobro duplicado (guía {duplicado.guia})')
+                    | {'guia_reembolso': duplicado.guia}], \
                 {'cobro_duplicado': True, 'guia_duplicada': duplicado.guia}
         if diferencia > 0:
             return [_opcion('reembolso', diferencia, descripcion='Devolución de la diferencia cobrada de más')], {'diferencia_mxn': diferencia}
@@ -294,6 +295,7 @@ def crear_reenvio(envio, caso):
                           origen={'lat': envio.origen_lat, 'lng': envio.origen_lng} if envio.origen_lat else None,
                           destino={'lat': envio.destino_lat, 'lng': envio.destino_lng} if envio.destino_lat else None,
                           commit=False)
+    db.obtener_envio_modelo(guia).metodo_pago = 'reenvio'
     return guia
 
 
@@ -305,6 +307,9 @@ def _aplicar(caso, envio):
         caso.cupon_codigo = crear_cupon(opcion['cupon_pct'], caso.id).codigo
     elif caso.resolucion == 'reenvio':
         caso.reenvio_guia = crear_reenvio(envio, caso)
+    elif caso.resolucion == 'reembolso' and caso.monto > 0:
+        import pagos
+        pagos.ejecutar_reembolso(caso)  # Stripe, sobre el pago original
     if caso.problema == 'trato_repartidor':
         sa.session.add(Queja(folio=db.nuevo_folio('QJ', Queja), conversacion_id=caso.conversacion_id, guia=envio.guia,
                              tipo='mal_servicio', descripcion=caso.detalle or 'Queja por el trato del repartidor',
@@ -356,6 +361,7 @@ def ejecutar(*, conversacion_id, turno_actual, folio, resolucion, codigo=''):
     envio = db.obtener_envio_modelo(caso.guia)
     caso.resolucion = resolucion
     caso.monto = opcion['monto_mxn'] if resolucion == 'reembolso' else 0.0
+    caso.reembolso_guia = opcion.get('guia_reembolso')
     tope = min(float(politicas.obtener('reembolso_tope_mxn')), envio.total)
     previos = _casos_recientes(caso.cliente_telefono, caso.cliente_correo)
     limite = int(politicas.obtener('limite_casos_cliente'))
@@ -379,6 +385,8 @@ def ejecutar(*, conversacion_id, turno_actual, folio, resolucion, codigo=''):
     sa.session.commit()
     resultado = {'estado': 'aprobado', 'folio': caso.folio, 'resolucion': RESOLUCIONES[resolucion]}
     if resolucion == 'reembolso':
+        if caso.reembolso_estado == 'error':
+            resultado['nota_interna'] = 'Stripe no pudo procesar el reembolso; el equipo lo reintentará. No es necesario que el cliente haga nada.'
         resultado |= {'monto_mxn': caso.monto, 'se_refleja_en': politicas.obtener('tiempo_reflejo_reembolso'),
                       'nota': 'Se devuelve únicamente al método de pago original; no se puede enviar a otra cuenta o tarjeta.'}
     if caso.cupon_codigo:

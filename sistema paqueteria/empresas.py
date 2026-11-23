@@ -191,23 +191,27 @@ def pagar(folio):
     lote = _lote_propio(folio)
     if lote.estado != 'borrador':
         return redirect(url_for('empresas.lote', folio=lote.folio))
-    if not current_app.config['PAGOS_SIMULADOS']:
+    import pagos
+    modo = pagos.modo()
+    if modo == 'stripe':
+        try:
+            url = pagos.iniciar_checkout(tipo='lote', datos={'lote_folio': lote.folio}, total=lote.total, correo=lote.correo,
+                                         descripcion=f'Lote {lote.folio} · {lote.empresa}',
+                                         url_cancelar=url_for('empresas.lote', folio=lote.folio))
+        except pagos.stripe.StripeError as e:
+            current_app.logger.error('No se pudo crear la sesión de Stripe: %s', e)
+            flash('No pudimos conectar con la pasarela de pago. Intenta de nuevo en un momento.', 'danger')
+            return redirect(url_for('empresas.lote', folio=lote.folio))
+        return redirect(url, 303)
+    if modo == 'no_disponible':
         flash('El pago en línea aún no está disponible. Contáctanos para completar tu lote.', 'warning')
         return redirect(url_for('empresas.lote', folio=lote.folio))
-    rem = {k: v for k, v in lote.remitente.items() if k != 'geo'} | {'correo': lote.correo}
-    guias = []
-    for r in lote.renglones:
-        if not r['cotizacion']:
-            continue
-        guias.append(db.crear_envio(remitente=rem, destinatario=r['destinatario'], cotizacion=r['cotizacion'],
-                                    tipo_entrega='recolector', correo_destinatario=r['destinatario'].get('correo'),
-                                    origen=lote.remitente.get('geo'), destino=r['destino_geo'], lote_folio=lote.folio,
-                                    commit=False))
-    lote.estado = 'pagado'
-    sa.session.commit()
+    guias = generar_envios_lote(lote)
     import notificaciones
     for g in guias:
+        db.obtener_envio_modelo(g).metodo_pago = 'simulado'
         notificaciones.notificar(g, 'creado')
+    sa.session.commit()
     session['mis_guias'] = (session.get('mis_guias', []) + guias)[-200:]
     flash(f'¡Listo! Se generaron {len(guias)} guías. Pasaremos a recolectarlas a tu dirección.', 'success')
     return redirect(url_for('empresas.lote', folio=lote.folio))
@@ -237,3 +241,20 @@ def certificado(folio):
     return render_template('sitio/certificado.html', lote=lote, envio=None, items=len(envios),
                            kg=sum(e.cotizacion.get('co2_kg', 0) for e in envios),
                            aportacion=tarifas.COSTO_CO2 * len(envios), arbol_kg=ARBOL_KG_CO2_ANUAL)
+
+
+def generar_envios_lote(lote, commit=True):
+    """Crea los envíos válidos del lote y lo marca como pagado. Devuelve las guías."""
+    rem = {k: v for k, v in lote.remitente.items() if k != 'geo'} | {'correo': lote.correo}
+    guias = []
+    for r in lote.renglones:
+        if not r['cotizacion']:
+            continue
+        guias.append(db.crear_envio(remitente=rem, destinatario=r['destinatario'], cotizacion=r['cotizacion'],
+                                    tipo_entrega='recolector', correo_destinatario=r['destinatario'].get('correo'),
+                                    origen=lote.remitente.get('geo'), destino=r['destino_geo'], lote_folio=lote.folio,
+                                    commit=False))
+    lote.estado = 'pagado'
+    if commit:
+        sa.session.commit()
+    return guias

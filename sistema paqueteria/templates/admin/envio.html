@@ -18,6 +18,7 @@
         <dt>Servicio</dt><dd>{{ tarifas.TIPOS_ENVIO[envio.cotizacion.tipo_envio].nombre }} · {{ envio.cotizacion.peso_facturable }} kg</dd>
         <dt>Entrega estimada</dt><dd>{{ envio.cotizacion.fecha_min | fecha }} – {{ envio.cotizacion.fecha_max | fecha }}</dd>
         <dt>Total</dt><dd>{{ envio.total | moneda }}</dd>
+        <dt>Pago</dt><dd>{{ {'stripe': 'Tarjeta (Stripe)', 'simulado': 'Simulado', 'reenvio': 'Reenvío sin costo'}.get(envio.metodo_pago, '—') }}{% if envio.stripe_payment_intent %} · <span style="font-family: Consolas, monospace; font-size: .85rem">{{ envio.stripe_payment_intent }}</span>{% endif %}</dd>
         <dt>Repartidor</dt><dd>{{ envio.repartidor.nombre if envio.repartidor else 'Sin asignar' }}</dd>
         <dt>Código de entrega</dt><dd style="font-family: Consolas, monospace">{{ envio.codigo_entrega }}</dd>
         {% if envio.fecha_preferida or envio.instruccion_entrega %}

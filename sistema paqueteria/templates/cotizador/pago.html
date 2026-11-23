@@ -64,9 +64,13 @@
       <form method="post" action="{{ url_for('procesar_pago') }}" class="mt-3">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="d-grid">
-          <button type="submit" class="btn btn-primary btn-lg"><i class="fa-solid fa-lock me-2"></i>Pagar {{ c.detalle.total | moneda }}</button>
+          <button type="submit" class="btn btn-primary btn-lg"><i class="fa-solid fa-lock me-2"></i>{{ 'Pagar con tarjeta' if modo_pago == 'stripe' else 'Pagar' }} {{ c.detalle.total | moneda }}</button>
         </div>
-        {% if pagos_simulados %}
+        {% if modo_pago == 'stripe' %}
+        <div class="notice mt-2 text-start" role="note"><i class="fa-solid fa-flask"></i>
+          <div><strong>Modo de prueba – usa la tarjeta 4242 4242 4242 4242</strong><br>
+          <span class="small">Cualquier fecha futura, cualquier CVC y cualquier código postal. No se cobra dinero real.</span></div></div>
+        {% elif pagos_simulados %}
         <p class="text-center mt-2 mb-0"><span class="demo-badge"><i class="fa-solid fa-flask"></i> Modo demostración: no se hará ningún cargo</span></p>
         {% endif %}
       </form>

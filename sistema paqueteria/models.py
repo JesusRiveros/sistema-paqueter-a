@@ -69,6 +69,8 @@ class Envio(sa.Model):
     instruccion_entrega: Mapped[str | None] = mapped_column(String(30))  # domicilio | vecino | sucursal
     nota_entrega: Mapped[str | None] = mapped_column(String(300))
     lote_folio: Mapped[str | None] = mapped_column(ForeignKey('lotes.folio'), index=True)
+    metodo_pago: Mapped[str | None] = mapped_column(String(20))            # stripe | simulado | reenvio
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(80), index=True)
 
     repartidor: Mapped[Usuario | None] = relationship(back_populates='envios')
     eventos: Mapped[list['Evento']] = relationship(back_populates='envio', order_by='Evento.id',
@@ -275,6 +277,27 @@ class Caso(sa.Model):
     resuelto: Mapped[datetime | None]
     resuelto_por: Mapped[str | None] = mapped_column(String(160))
     nota_admin: Mapped[str | None] = mapped_column(Text)
+    # Ejecución real del reembolso (Stripe)
+    reembolso_guia: Mapped[str | None] = mapped_column(String(20))       # guía cuyo pago se reembolsa (p. ej. el cobro duplicado)
+    stripe_refund_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    reembolso_estado: Mapped[str | None] = mapped_column(String(30))     # estado que devuelve Stripe, o manual / error
+    reembolso_error: Mapped[str | None] = mapped_column(Text)
+
+
+class Pedido(sa.Model):
+    """Pago en curso con Stripe Checkout. Al confirmarse el pago se crean el o los envíos."""
+    __tablename__ = 'pedidos'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(10))                        # envio | lote
+    estado: Mapped[str] = mapped_column(String(20), default='pendiente')  # pendiente | pagado | expirado
+    datos: Mapped[dict] = mapped_column(JSON)
+    total: Mapped[float]
+    correo: Mapped[str | None] = mapped_column(String(160))
+    stripe_session_id: Mapped[str | None] = mapped_column(String(120), unique=True)
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(80))
+    guias: Mapped[list | None] = mapped_column(JSON)
+    creado: Mapped[datetime] = mapped_column(default=ahora)
+    pagado: Mapped[datetime | None]
 
 
 class Cupon(sa.Model):

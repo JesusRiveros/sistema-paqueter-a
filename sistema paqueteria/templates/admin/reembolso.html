@@ -1,6 +1,7 @@
 {% extends 'admin/_base.html' %}
 {% block title %}Caso {{ caso.folio }} · Operaciones Balula{% endblock %}
 {% block titulo_pagina %}Caso {{ caso.folio }}{% endblock %}
+{% set estados_reembolso = {'succeeded': ('Reembolsado', 'ok'), 'pending': ('En proceso', 'riesgo-medio'), 'requires_action': ('Requiere acción', 'riesgo-medio'), 'failed': ('Falló', 'riesgo-alto'), 'canceled': ('Cancelado', 'riesgo-alto'), 'error': ('Error al reembolsar', 'riesgo-alto'), 'manual': ('Devolución manual', '')} %}
 {% block admin %}
 <div class="row g-4">
   <div class="col-lg-7">
@@ -35,6 +36,29 @@
     {% endif %}
   </div>
   <div class="col-lg-5">
+    {% if caso.resolucion == 'reembolso' and caso.estado in ('aprobado_auto', 'aprobado_admin') %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-brands fa-stripe-s"></i> Reembolso en Stripe</h2>
+      {% set er = estados_reembolso.get(caso.reembolso_estado, (caso.reembolso_estado or 'Sin ejecutar', '')) %}
+      <dl class="kv mb-3">
+        <dt>Estado real</dt><dd><span class="pill {{ er[1] }}">{{ er[0] }}</span></dd>
+        <dt>Monto</dt><dd>{{ caso.monto | moneda }}</dd>
+        {% if caso.stripe_refund_id %}<dt>ID del reembolso</dt><dd style="font-family: Consolas, monospace; font-size: .85rem">{{ caso.stripe_refund_id }}</dd>{% endif %}
+        <dt>Pago original</dt><dd style="font-family: Consolas, monospace; font-size: .85rem">{{ pago_original or 'sin pago en Stripe' }}</dd>
+      </dl>
+      {% if caso.reembolso_error %}<p class="small text-danger">{{ caso.reembolso_error }}</p>{% endif %}
+      <div class="d-flex gap-2">
+        {% if caso.stripe_refund_id %}
+        <form method="post" action="{{ url_for('admin.reembolso_stripe', folio=caso.folio) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-primary btn-sm" name="accion" value="actualizar"><i class="fa-solid fa-rotate me-1"></i> Consultar en Stripe</button></form>
+        {% endif %}
+        {% if caso.reembolso_estado in ('error', 'failed', 'canceled') %}
+        <form method="post" action="{{ url_for('admin.reembolso_stripe', folio=caso.folio) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm" name="accion" value="reintentar"><i class="fa-solid fa-redo me-1"></i> Reintentar reembolso</button></form>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
     {% if caso.estado == 'pendiente' %}
     <form class="panel" method="post" action="{{ url_for('admin.reembolso_resolver', folio=caso.folio) }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
