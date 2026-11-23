@@ -1,0 +1,38 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Políticas · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Políticas de reembolsos y compensaciones{% endblock %}
+{% block admin %}
+<form class="panel" method="post" style="max-width: 860px">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <p class="text-muted">Estos valores los usa Lula al resolver casos. Los cambios aplican de inmediato para los casos nuevos.</p>
+  <div class="row g-4">
+    {% for clave, (defecto, tipo, etiqueta, ayuda) in politicas.items() %}
+    <div class="col-md-6">
+      <label class="form-label" for="{{ clave }}">{{ etiqueta }}</label>
+      <div class="input-group">
+        {% if tipo == 'dinero' %}<span class="input-group-text">$</span>{% endif %}
+        <input class="form-control" id="{{ clave }}" name="{{ clave }}" value="{{ valores[clave] | int if tipo in ('entero', 'porcentaje') else valores[clave] }}"
+               {% if tipo == 'texto' %}maxlength="60"{% else %}type="number" step="{{ '0.01' if tipo == 'dinero' else '1' }}" min="{{ 1 if tipo == 'porcentaje' else 0 }}"{% endif %} required>
+        {% if tipo == 'porcentaje' %}<span class="input-group-text">%</span>{% endif %}
+      </div>
+      <div class="form-text">{{ ayuda }}{% if valores[clave] != defecto %} <span class="text-brand">(valor original: {{ defecto }})</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="mt-4"><button class="btn btn-primary">Guardar políticas</button></div>
+</form>
+<section class="panel mt-4" style="max-width: 860px">
+  <h2 class="panel-title"><i class="fa-solid fa-table-list"></i> Cómo decide Lula</h2>
+  <ul class="line-items">
+    <li><span>Retraso menor al umbral</span><span>Disculpa + cupón de {{ valores.cupon_retraso_menor_pct | int }}%</span></li>
+    <li><span>Retraso mayor al umbral</span><span>Cupón de {{ valores.cupon_retraso_mayor_pct | int }}% o reembolso del costo del envío</span></li>
+    <li><span>Paquete dañado (con foto)</span><span>Reenvío o reembolso total</span></li>
+    <li><span>Entregado pero no llegó</span><span>Sin evidencia clara: reenvío o reembolso · Con evidencia: revisión</span></li>
+    <li><span>Paquete perdido</span><span>Reenvío o reembolso total</span></li>
+    <li><span>Cobro duplicado o incorrecto</span><span>Devolución de la diferencia exacta</span></li>
+    <li><span>Trato del repartidor</span><span>Disculpa + cupón de {{ valores.cupon_trato_pct | int }}% + queja ligada al repartidor</span></li>
+    <li><span>Monto mayor a {{ valores.reembolso_tope_mxn | moneda }} o más de lo pagado</span><span>Pendiente de aprobación</span></li>
+    <li><span>Más de {{ valores.limite_casos_cliente | int }} compensaciones en {{ valores.ventana_dias_cliente | int }} días</span><span>Pendiente de aprobación</span></li>
+  </ul>
+</section>
+{% endblock %}

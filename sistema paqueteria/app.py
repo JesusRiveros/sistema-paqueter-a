@@ -2,7 +2,7 @@
 import os
 import re
 import secrets
-from datetime import date
+from datetime import date, datetime
 import time
 from functools import wraps
 
@@ -20,6 +20,7 @@ import demo
 import empresas
 import geo
 import notificaciones
+import reembolsos
 import repartidor
 import tarifas
 from guia_pdf import generar_guia_pdf
@@ -368,8 +369,36 @@ def completar():
 @app.route('/app/pago')
 @requiere('cotizacion', 'contactos')
 def pago():
-    return render_template('cotizador/pago.html', paso_actual=4, c=session['cotizacion'],
-                           contactos=session['contactos'])
+    return render_template('cotizador/pago.html', paso_actual=4, c=cotizacion_con_cupon(),
+                           contactos=session['contactos'], cupon=session.get('cupon'))
+
+
+def cotizacion_con_cupon():
+    """La cotización de la sesión, con el cupón aplicado si hay uno válido."""
+    c = dict(session['cotizacion'])
+    codigo = session.get('cupon')
+    if codigo:
+        cupon, error = reembolsos.validar_cupon(codigo)
+        if cupon:
+            c['detalle'] = reembolsos.aplicar_cupon_a_cotizacion(c['detalle'], cupon)
+        else:
+            session.pop('cupon', None)
+    return c
+
+
+@app.route('/app/cupon', methods=['POST'])
+@requiere('cotizacion', 'contactos')
+def aplicar_cupon():
+    if request.form.get('quitar'):
+        session.pop('cupon', None)
+        return redirect(url_for('pago'))
+    cupon, error = reembolsos.validar_cupon(request.form.get('codigo', ''))
+    if error:
+        flash(error, 'danger')
+    else:
+        session['cupon'] = cupon.codigo
+        flash(f'Cupón aplicado: {cupon.porcentaje}% de descuento.', 'success')
+    return redirect(url_for('pago'))
 
 
 @app.route('/app/procesar_pago', methods=['POST'])
@@ -386,7 +415,7 @@ def procesar_pago():
 def checkout_simulado():
     if not app.config['PAGOS_SIMULADOS']:
         abort(404)
-    c = session['cotizacion']
+    c = cotizacion_con_cupon()
     if request.method == 'POST':
         resultado_pago = request.form.get('resultado')
         if resultado_pago == 'failure':
@@ -401,6 +430,11 @@ def checkout_simulado():
             correo_destinatario=contactos['destinatario'].get('correo'),
             origen=c.get('origen_geo'), destino=c.get('destino_geo'),
         )
+        if session.get('cupon'):
+            cupon, _ = reembolsos.validar_cupon(session.pop('cupon'))
+            if cupon:
+                cupon.usado, cupon.usado_en_guia = datetime.now(), guia
+                db.sa.session.commit()
         notificaciones.notificar(guia, 'creado')
         session['mis_guias'] = (session.get('mis_guias', []) + [guia])[-20:]
         for clave in ('cotizacion', 'contactos', 'formulario'):

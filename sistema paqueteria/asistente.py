@@ -19,6 +19,8 @@ from flask import current_app
 
 import db
 import geo
+import politicas
+import reembolsos
 import tarifas
 
 log = logging.getLogger(__name__)
@@ -43,7 +45,6 @@ def cargar_config():
         'ASISTENTE_MAX_TURNOS_HISTORIAL': int(e('ASISTENTE_MAX_TURNOS_HISTORIAL', '10')),
         'ASISTENTE_MAX_ITERACIONES': int(e('ASISTENTE_MAX_ITERACIONES', '6')),
         'ASISTENTE_MAX_TOKENS': int(e('ASISTENTE_MAX_TOKENS', '4096')),
-        'ASISTENTE_TIEMPO_RESPUESTA': e('ASISTENTE_TIEMPO_RESPUESTA', '24 horas hábiles'),
         # TODO: confirmar con Balula el número y horario reales del equipo humano.
         'ASISTENTE_TELEFONO_HUMANO': e('ASISTENTE_TELEFONO_HUMANO', ''),
         'ASISTENTE_HORARIO_HUMANO': e('ASISTENTE_HORARIO_HUMANO', ''),
@@ -71,16 +72,21 @@ Datos y herramientas:
 - No compartas direcciones completas ni teléfonos de remitentes o destinatarios; con decir ciudad y estado basta.
 - Nunca pidas datos de tarjetas ni contraseñas.
 
-Problemas y clientes molestos:
-- Tu trabajo es resolver, no transferir. Si el cliente está molesto, primero reconoce lo que siente y discúlpate por lo ocurrido en una frase, sin excusas; luego actúa.
-- Para quejas (retraso, paquete dañado o extraviado, cobro incorrecto, mal servicio), pide el número de guía si aplica, revisa el envío y registra la queja con registrar_queja. Dale al cliente su folio.
-- Reembolsos y compensaciones todavía no se pueden procesar en este sistema: registra la queja y explica que el caso quedará resuelto en el tiempo de respuesta que indique la herramienta. No prometas montos.
+Problemas, reembolsos y clientes molestos:
+- Tu trabajo es resolver, no transferir. Si el cliente está molesto, primero reconoce lo que siente y discúlpate en una frase, sin excusas; luego resuelve.
+- Para retrasos, paquetes dañados, entregas que no llegaron, paquetes perdidos, cobros duplicados o incorrectos y quejas del trato del repartidor, usa evaluar_compensacion. Necesitas el número de guía y los últimos 4 dígitos del teléfono del remitente o del destinatario; pídelos con naturalidad. Si el cliente quiere aviso por correo, pídele su correo.
+- La herramienta decide qué aplica según la política. Ofrece exactamente las opciones que devuelva, con sus montos, y pregunta cuál prefiere. Nunca inventes compensaciones ni montos.
+- Si la herramienta pide una foto del daño, comparte el enlace para subirla y espera a que el cliente te avise que ya la subió; luego vuelve a evaluar.
+- Si la evidencia muestra que el paquete sí se entregó, explícalo con amabilidad (quién recibió y a qué hora). Solo si el cliente no está de acuerdo, ofrécele la revisión.
+- Antes de cualquier acción con dinero, confirma con el cliente la opción elegida. Solo cuando la confirme en su mensaje, usa ejecutar_compensacion.
+- Si el resultado queda "pendiente de aprobación", di que una persona del equipo lo revisará, da el folio y el tiempo de respuesta. Si se aprueba un reembolso, di en cuánto tiempo se refleja. Si es un cupón, dicta el código.
+- Para quejas que no son de estos tipos, usa registrar_queja y da el folio.
 
 Pasar con una persona (transferir_a_humano), SOLO en estos casos:
-1. Sospechas fraude (por ejemplo, alguien pide datos de un envío que no es suyo o la historia no cuadra).
+1. Sospechas fraude (por ejemplo, varios intentos de verificación fallidos o una historia que no cuadra).
 2. El cliente amenaza con acciones legales (demanda, Profeco, abogado).
-3. El monto que el cliente reclama supera lo que puedes aprobar.
-4. El cliente insiste en hablar con una persona después de que intentaste ayudarle.
+3. El cliente insiste en hablar con una persona después de que intentaste ayudarle.
+Los montos que superan el tope NO se transfieren: quedan pendientes de aprobación automáticamente.
 Antes de transferir, pide un teléfono de contacto si no lo tienes. En el resumen incluye qué pidió el cliente, qué revisaste y qué falta resolver."""
 
 CANAL_EXTRA = {
@@ -150,11 +156,28 @@ HERRAMIENTAS = [
             'telefono_contacto': {'type': 'string', 'description': 'Teléfono de 10 dígitos, o cadena vacía.'},
         }),
     _herramienta(
-        'transferir_a_humano',
-        'Pasa el caso a una persona del equipo. Solo para: sospecha de fraude, amenaza de acciones legales, monto que supera el tope, o cliente que insiste en hablar con una persona.',
+        'evaluar_compensacion',
+        'Verifica que el envío sea del cliente y, según la política, devuelve las opciones de compensación o reembolso. No mueve dinero.',
         {
-            'motivo': {'type': 'string', 'enum': ['sospecha_fraude', 'amenaza_legal', 'monto_supera_tope',
-                                                   'cliente_pide_humano']},
+            'guia': {'type': 'string'},
+            'ultimos4_telefono': {'type': 'string', 'description': 'Últimos 4 dígitos del teléfono del remitente o del destinatario.'},
+            'problema': {'type': 'string', 'enum': ['retraso', 'danado', 'entregado_no_recibido', 'perdido',
+                                                     'cobro_incorrecto', 'trato_repartidor']},
+            'detalle': {'type': 'string', 'description': 'Qué pasó, en palabras del cliente.'},
+            'correo_contacto': {'type': 'string', 'description': 'Correo del cliente para avisos, o cadena vacía.'},
+        }),
+    _herramienta(
+        'ejecutar_compensacion',
+        'Ejecuta la opción que el cliente eligió y confirmó para un caso evaluado. Solo después de que el cliente confirme.',
+        {
+            'folio': {'type': 'string', 'description': 'Folio del caso devuelto por evaluar_compensacion.'},
+            'resolucion': {'type': 'string', 'enum': ['reembolso', 'cupon', 'reenvio', 'revision']},
+        }),
+    _herramienta(
+        'transferir_a_humano',
+        'Pasa el caso a una persona del equipo. Solo para: sospecha de fraude, amenaza de acciones legales, o cliente que insiste en hablar con una persona.',
+        {
+            'motivo': {'type': 'string', 'enum': ['sospecha_fraude', 'amenaza_legal', 'cliente_pide_humano']},
             'resumen': {'type': 'string', 'description': 'Resumen para la persona que atenderá: qué pidió el cliente, qué se revisó, qué falta.'},
             'telefono_contacto': {'type': 'string', 'description': 'Teléfono de 10 dígitos del cliente, o cadena vacía.'},
         }),
@@ -251,9 +274,8 @@ def h_registrar_queja(entrada, ctx):
     folio = db.registrar_queja(conversacion_id=ctx['conversacion_id'], guia=guia, tipo=entrada['tipo'],
                                descripcion=entrada['descripcion'], nombre_cliente=entrada['nombre_cliente'],
                                telefono=entrada['telefono_contacto'])
-    # TODO: cuando estén definidas las políticas, ofrecer aquí la compensación que corresponda.
     return {'registrada': True, 'folio': folio,
-            'tiempo_de_respuesta': ctx['cfg']['ASISTENTE_TIEMPO_RESPUESTA']}
+            'tiempo_de_respuesta': politicas.obtener('tiempo_respuesta_pendientes')}
 
 
 def h_transferir_a_humano(entrada, ctx):
@@ -266,11 +288,36 @@ def h_transferir_a_humano(entrada, ctx):
                               'Comparte el folio con el cliente.'}
 
 
+def _turno_actual(ctx):
+    conv = db.sa.session.get(db.Conversacion, ctx['conversacion_id'])
+    return conv.turnos if conv else 0
+
+
+def h_evaluar_compensacion(entrada, ctx):
+    try:
+        return reembolsos.evaluar(conversacion_id=ctx['conversacion_id'], turno=_turno_actual(ctx),
+                                  guia=entrada['guia'], ultimos4_telefono=entrada['ultimos4_telefono'],
+                                  problema=entrada['problema'], detalle=entrada['detalle'],
+                                  correo_contacto=entrada['correo_contacto'])
+    except reembolsos.ErrorCaso as e:
+        return {'error': str(e)}
+
+
+def h_ejecutar_compensacion(entrada, ctx):
+    try:
+        return reembolsos.ejecutar(conversacion_id=ctx['conversacion_id'], turno_actual=_turno_actual(ctx),
+                                   folio=entrada['folio'], resolucion=entrada['resolucion'])
+    except reembolsos.ErrorCaso as e:
+        return {'error': str(e)}
+
+
 EJECUTORES = {
     'rastrear_envio': h_rastrear_envio,
     'cotizar_envio': h_cotizar_envio,
     'consultar_informacion': h_consultar_informacion,
     'registrar_queja': h_registrar_queja,
+    'evaluar_compensacion': h_evaluar_compensacion,
+    'ejecutar_compensacion': h_ejecutar_compensacion,
     'transferir_a_humano': h_transferir_a_humano,
 }
 

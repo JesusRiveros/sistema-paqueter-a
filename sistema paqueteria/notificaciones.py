@@ -70,3 +70,33 @@ def notificar(guia, tipo, detalle=''):
     db.sa.session.add(Notificacion(guia=guia, para=envio.correo_destinatario, asunto=asunto, cuerpo=cuerpo, estado=estado))
     db.sa.session.commit()
     return estado
+
+
+def notificar_caso(caso):
+    """Avisa al cliente la decisión sobre un caso pendiente (aprobado o rechazado)."""
+    import politicas
+    import reembolsos
+    envio = db.obtener_envio_modelo(caso.guia)
+    para = caso.correo_contacto or (envio.correo_destinatario if caso.cliente_rol == 'destinatario' else None)
+    if not para:
+        return None
+    nombre = getattr(envio, caso.cliente_rol, {}).get('nombre', '').split(' ')[0] or 'Hola'
+    if caso.estado == 'aprobado_admin':
+        asunto = f'Tu caso {caso.folio} fue aprobado'
+        detalle = {
+            'reembolso': f"Aprobamos el reembolso de ${caso.monto:,.2f} MXN. Se reflejará en {politicas.obtener('tiempo_reflejo_reembolso')} en tu mismo método de pago.",
+            'cupon': f'Tu cupón es {caso.cupon_codigo}. Úsalo en el paso de pago de tu próximo envío.',
+            'reenvio': f'Registramos el reenvío sin costo con la nueva guía {caso.reenvio_guia}.',
+            'revision': 'Revisamos tu caso y le daremos seguimiento contigo.',
+        }[caso.resolucion]
+    else:
+        asunto = f'Respuesta sobre tu caso {caso.folio}'
+        detalle = 'Revisamos tu caso y en esta ocasión no procede la solicitud.'
+    if caso.nota_admin:
+        detalle += f'\n\nComentario del equipo: {caso.nota_admin}'
+    cuerpo = (f'Hola {nombre}:\n\n{detalle}\n\nGuía: {caso.guia} · {reembolsos.PROBLEMAS[caso.problema]}\n'
+              'Si tienes dudas, responde este correo o escríbenos en el chat del sitio.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=caso.guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado

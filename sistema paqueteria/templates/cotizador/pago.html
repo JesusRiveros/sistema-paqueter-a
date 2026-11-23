@@ -46,6 +46,21 @@
     </div>
     <div class="col-lg-4">
       {% include 'partials/resumen.html' %}
+      <form method="post" action="{{ url_for('aplicar_cupon') }}" class="panel mt-3 py-3">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        {% if cupon %}
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <span><i class="fa-solid fa-ticket text-brand me-1"></i> Cupón <strong>{{ cupon }}</strong> aplicado</span>
+          <button class="btn btn-ghost btn-sm" name="quitar" value="1">Quitar</button>
+        </div>
+        {% else %}
+        <label class="form-label" for="codigo-cupon">¿Tienes un cupón?</label>
+        <div class="input-group">
+          <input class="form-control text-uppercase" id="codigo-cupon" name="codigo" maxlength="20" placeholder="BALXXXXXX" required>
+          <button class="btn btn-outline-primary" style="border-radius: 0 var(--radius-sm) var(--radius-sm) 0">Aplicar</button>
+        </div>
+        {% endif %}
+      </form>
       <form method="post" action="{{ url_for('procesar_pago') }}" class="mt-3">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="d-grid">

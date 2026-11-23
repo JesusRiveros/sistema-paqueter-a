@@ -127,3 +127,34 @@ def contexto_rastreo(guia):
             'opciones_fecha': opciones_fecha(envio) if puede_reprogramar(envio) else [],
             'instrucciones': INSTRUCCIONES, 'preferencia': {'fecha': envio.fecha_preferida, 'instruccion': envio.instruccion_entrega},
             'compensado': bool(envio.cotizacion.get('compensar_co2'))}
+
+
+# ---------------------------------------------------------------- Evidencia (foto del daño)
+
+EXT_FOTO = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp'}
+
+
+@bp.route('/evidencia/<token>', methods=['GET', 'POST'])
+def evidencia(token):
+    import os
+    import secrets as _secrets
+    from flask import current_app
+    from models import Evidencia
+    ev = sa.session.get(Evidencia, token) or abort(404)
+    if datetime.now() - ev.creada > timedelta(days=7):
+        abort(404)
+    if request.method == 'POST':
+        foto = request.files.get('foto')
+        ext = EXT_FOTO.get(foto.mimetype) if foto and foto.filename else None
+        if not ext:
+            flash('Sube una foto en formato JPG, PNG o WebP.', 'danger')
+            return redirect(url_for('clientes.evidencia', token=token))
+        carpeta = os.path.join(current_app.config['UPLOAD_FOLDER'], 'evidencias')
+        os.makedirs(carpeta, exist_ok=True)
+        nombre = f'{ev.guia}-{_secrets.token_hex(6)}{ext}'
+        foto.save(os.path.join(carpeta, nombre))
+        ev.archivo, ev.subida = f'evidencias/{nombre}', datetime.now()
+        sa.session.commit()
+        flash('¡Gracias! Recibimos tu foto. Regresa al chat y avísale a Lula que ya la subiste.', 'success')
+        return redirect(url_for('clientes.evidencia', token=token))
+    return render_template('sitio/evidencia.html', ev=ev)

@@ -21,6 +21,7 @@
     return escapar(t)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\b(BLL-[0-9A-F]{8})\b/g, '<a href="/rastreo?guia=$1">$1</a>')
+      .replace(/(^|\s|\()(\/evidencia\/[A-Za-z0-9_-]{10,})/g, '$1<a href="$2" target="_blank" rel="noopener">Subir foto aquí</a>')
       .replace(/\n/g, '<br>');
   }
 
