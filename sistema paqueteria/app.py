@@ -1,18 +1,26 @@
 """Balula Express: sitio web, cotizador y rastreo de envíos."""
-import math
 import os
 import re
 import secrets
 from datetime import date
+import time
 from functools import wraps
 
 import click
-import requests
 from dotenv import load_dotenv
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    Response, session, url_for)
 
+import admin
+import asistente
+import auth
+import clientes
 import db
+import demo
+import empresas
+import geo
+import notificaciones
+import repartidor
 import tarifas
 from guia_pdf import generar_guia_pdf
 
@@ -22,13 +30,19 @@ load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.getenv('SECRET_KEY') or secrets.token_hex(32),
-    DATABASE=os.getenv('DATABASE') or os.path.join(BASE_DIR, 'instance', 'balula.sqlite3'),
+    SQLALCHEMY_DATABASE_URI=os.getenv('DATABASE_URL') or 'sqlite:///' + os.path.join(BASE_DIR, 'instance', 'balula.sqlite3'),
+    SQLALCHEMY_ENGINE_OPTIONS={'pool_pre_ping': True},
+    UPLOAD_FOLDER=os.getenv('UPLOAD_FOLDER') or os.path.join(BASE_DIR, 'instance', 'archivos'),
+    MAX_CONTENT_LENGTH=8 * 1024 * 1024,
     GOOGLE_MAPS_API_KEY=os.getenv('GOOGLE_MAPS_API_KEY', ''),
     PUBLIC_BASE_URL=os.getenv('PUBLIC_BASE_URL', '').rstrip('/'),
     PAGOS_SIMULADOS=os.getenv('PAGOS_SIMULADOS', '1') == '1',
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=auth.DURACION_SESION,
+    SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '0') == '1',
 )
+os.makedirs(os.path.join(BASE_DIR, 'instance'), exist_ok=True)
 db.init_app(app)
 
 CONTACTO = {
@@ -39,6 +53,14 @@ CONTACTO = {
     'telefono_href': '+525570665793',
     'horario': 'Lunes a viernes de 9:00 a 19:00 · Sábados de 9:00 a 14:00',
 }
+
+app.config['CONTACTO'] = CONTACTO
+app.register_blueprint(auth.bp)
+app.register_blueprint(repartidor.bp)
+app.register_blueprint(admin.bp)
+app.register_blueprint(clientes.bp)
+app.register_blueprint(empresas.bp)
+demo.registrar_comando(app)
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
 RE_CP = re.compile(r'^\d{5}$')
@@ -85,6 +107,7 @@ def contexto_global():
         'contacto': CONTACTO,
         'tarifas': tarifas,
         'anio_actual': date.today().year,
+        'nombres_estado': db.NOMBRE_ESTADO,
     }
 
 
@@ -119,83 +142,27 @@ def cabeceras_seguridad(resp):
 
 
 # ---------------------------------------------------------------------------
-# Google Maps (servidor)
+# Mapas: Google con respaldo en OpenStreetMap (ver geo.py)
 # ---------------------------------------------------------------------------
 
-def descomponer_direccion(direccion):
-    vacio = {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
-    if not app.config['GOOGLE_MAPS_API_KEY'] or not direccion:
-        return vacio
-    try:
-        resp = requests.get('https://maps.googleapis.com/maps/api/geocode/json',
-                            params={'address': direccion, 'key': app.config['GOOGLE_MAPS_API_KEY'],
-                                    'language': 'es', 'region': 'mx'},
-                            timeout=8).json()
-        componentes = resp['results'][0]['address_components']
-    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
-        app.logger.warning('No se pudo geocodificar "%s": %s', direccion, e)
-        return vacio
-
-    partes = dict(vacio)
-    numero = ruta = ''
-    for comp in componentes:
-        tipos = comp['types']
-        if 'street_number' in tipos:
-            numero = comp['long_name']
-        elif 'route' in tipos:
-            ruta = comp['long_name']
-        elif 'sublocality_level_1' in tipos or 'neighborhood' in tipos:
-            partes['colonia'] = comp['long_name']
-        elif 'locality' in tipos:
-            partes['ciudad'] = comp['long_name']
-        elif 'administrative_area_level_1' in tipos:
-            partes['estado'] = comp['long_name']
-        elif 'postal_code' in tipos:
-            partes['cp'] = comp['long_name']
-    partes['calle'] = f'{ruta} {numero}'.strip()
-    return partes
-
-
-def _haversine_km(lat1, lon1, lat2, lon2):
-    r = 6371
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
-
-
-def _float_o_none(valor):
-    try:
-        n = float(valor)
-        return n if math.isfinite(n) else None
-    except (TypeError, ValueError):
-        return None
+def ubicar_direccion(direccion, lat=None, lng=None):
+    """Partes de la dirección (para prellenar el paso 3) y coordenadas (para rutas y mapa)."""
+    r = geo.geocodificar(direccion, app.config['GOOGLE_MAPS_API_KEY'])
+    partes = r['partes'] if r else {'calle': '', 'colonia': '', 'ciudad': '', 'estado': '', 'cp': ''}
+    if lat is None and r:
+        lat, lng = r['lat'], r['lng']
+    return partes, ({'lat': lat, 'lng': lng} if lat is not None and lng is not None else None)
 
 
 def calcular_distancia_km(origen, destino, coords=None, distancia_cliente=None):
-    """Distancia por carretera. Orden: Distance Matrix → ruta del navegador → línea recta × 1.25."""
-    if app.config['GOOGLE_MAPS_API_KEY']:
-        try:
-            data = requests.get('https://maps.googleapis.com/maps/api/distancematrix/json',
-                                params={'origins': origen, 'destinations': destino,
-                                        'key': app.config['GOOGLE_MAPS_API_KEY']},
-                                timeout=8).json()
-            if data.get('status') != 'OK':
-                app.logger.error('Google Distance Matrix rechazó la petición: %s %s',
-                                 data.get('status'), data.get('error_message', ''))
-            elemento = data['rows'][0]['elements'][0]
-            if elemento.get('status') == 'OK':
-                return round(elemento['distance']['value'] / 1000, 1)
-        except (requests.RequestException, KeyError, IndexError, ValueError) as e:
-            app.logger.warning('Distance Matrix falló: %s', e)
-
-    distancia_cliente = _float_o_none(distancia_cliente)
-    if distancia_cliente and 0 < distancia_cliente < 10000:
-        return round(distancia_cliente, 1)
-
-    if coords and all(c is not None for c in coords):
-        return round(_haversine_km(*coords) * 1.25, 1)
-    return None
+    """Distancia por carretera en km, o None si ningún proveedor pudo calcularla."""
+    try:
+        km, fuente = geo.distancia_km(origen, destino, app.config['GOOGLE_MAPS_API_KEY'], coords, distancia_cliente)
+    except geo.SinProveedores as e:
+        app.logger.warning('Sin distancia para "%s" → "%s": %s', origen, destino, e)
+        return None
+    app.logger.info('Distancia %s km (fuente: %s)', km, fuente)
+    return km
 
 
 # ---------------------------------------------------------------------------
@@ -249,14 +216,9 @@ def contacto():
     return redirect(url_for('home', _anchor='contacto'))
 
 
-@app.route('/iniciar-sesion')
-def login():
-    return render_template('sitio/login.html')
-
-
 @app.route('/formulario')
 def formulario():
-    return redirect(url_for('login'), 301)
+    return redirect(url_for('auth.login'), 301)
 
 
 @app.route('/rastreo')
@@ -270,8 +232,9 @@ def rastreo():
             envio = db.obtener_envio(guia)
             if not envio:
                 error = f'No encontramos la guía {guia}. Verifica que esté escrita correctamente.'
+    extra = clientes.contexto_rastreo(guia) if envio else {}
     return render_template('sitio/rastreo.html', guia=guia, envio=envio, error=error,
-                           estados=db.ESTADOS, estados_idx=db.ESTADOS_IDX)
+                           estados=db.ESTADOS, estados_idx=db.ESTADOS_IDX, **extra)
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +285,7 @@ def calcular_envio():
 
     distancia = None
     if not errores:
-        coords = [_float_o_none(datos[k]) for k in ('origen_lat', 'origen_lng', 'destino_lat', 'destino_lng')]
+        coords = [geo.float_o_none(datos[k]) for k in ('origen_lat', 'origen_lng', 'destino_lat', 'destino_lng')]
         distancia = calcular_distancia_km(datos['origen'], datos['destino'], coords, datos['distancia_ruta_km'])
         if distancia is None:
             errores['destino'] = ('No pudimos calcular la distancia entre esas direcciones. Intenta de nuevo en unos '
@@ -340,13 +303,17 @@ def calcular_envio():
     if errores:
         return render_template('cotizador/cotizar.html', paso_actual=1, datos=datos, errores=errores), 400
 
+    origen_partes, origen_geo = ubicar_direccion(datos['origen'], coords[0], coords[1])
+    destino_partes, destino_geo = ubicar_direccion(datos['destino'], coords[2], coords[3])
     session['formulario'] = datos
     session['cotizacion'] = {
         'origen': datos['origen'],
         'destino': datos['destino'],
         'tipo_entrega': datos['tipo_entrega'],
-        'origen_partes': descomponer_direccion(datos['origen']),
-        'destino_partes': descomponer_direccion(datos['destino']),
+        'origen_partes': origen_partes,
+        'destino_partes': destino_partes,
+        'origen_geo': origen_geo,
+        'destino_geo': destino_geo,
         'detalle': cot.to_dict(),
     }
     session.pop('contactos', None)
@@ -432,7 +399,9 @@ def checkout_simulado():
             remitente=contactos['remitente'], destinatario=contactos['destinatario'],
             cotizacion=c['detalle'], tipo_entrega=c['tipo_entrega'],
             correo_destinatario=contactos['destinatario'].get('correo'),
+            origen=c.get('origen_geo'), destino=c.get('destino_geo'),
         )
+        notificaciones.notificar(guia, 'creado')
         session['mis_guias'] = (session.get('mis_guias', []) + [guia])[-20:]
         for clave in ('cotizacion', 'contactos', 'formulario'):
             session.pop(clave, None)
@@ -496,6 +465,78 @@ def nueva_cotizacion():
 
 
 # ---------------------------------------------------------------------------
+# Asistente de atención al cliente (chat)
+# ---------------------------------------------------------------------------
+
+ASISTENTE_LIMITE_MENSAJES = 20      # por sesión...
+ASISTENTE_VENTANA_SEG = 5 * 60      # ...cada 5 minutos
+
+
+def _conversacion_de_sesion(canal='web', crear=True):
+    cid = session.get('asistente_conv')
+    if cid and db.obtener_conversacion(cid):
+        return cid
+    if not crear:
+        return None
+    cid = asistente.nueva_conversacion(canal)
+    session['asistente_conv'] = cid
+    return cid
+
+
+@app.route('/api/asistente/estado')
+def asistente_estado():
+    return jsonify(configurado=asistente.esta_configurado())
+
+
+@app.route('/api/asistente/historial')
+def asistente_historial():
+    cid = _conversacion_de_sesion(crear=False)
+    mensajes = db.chat_mensajes(cid) if cid else []
+    return jsonify(mensajes=[{'rol': m['rol'], 'texto': m['texto']} for m in mensajes])
+
+
+@app.route('/api/asistente/reiniciar', methods=['POST'])
+def asistente_reiniciar():
+    session.pop('asistente_conv', None)
+    return jsonify(ok=True)
+
+
+@app.route('/api/asistente/mensaje', methods=['POST'])
+def asistente_mensaje():
+    datos = request.get_json(silent=True) or {}
+    texto = str(datos.get('texto', '')).strip()
+    if not texto:
+        return jsonify(ok=False, error='Escribe un mensaje.'), 400
+    if len(texto) > 1000:
+        return jsonify(ok=False, error='Tu mensaje es muy largo; resúmelo en menos de 1000 caracteres.'), 400
+
+    ahora = time.time()
+    recientes = [t for t in session.get('asistente_ts', []) if ahora - t < ASISTENTE_VENTANA_SEG]
+    if len(recientes) >= ASISTENTE_LIMITE_MENSAJES:
+        return jsonify(ok=False, error='Enviaste muchos mensajes seguidos. Espera un par de minutos.'), 429
+    session['asistente_ts'] = recientes + [ahora]
+
+    canal = datos.get('canal') if datos.get('canal') in ('web', 'voz') else 'web'
+    cid = _conversacion_de_sesion(canal)
+    try:
+        r = asistente.responder(cid, texto)
+    except asistente.AsistenteNoConfigurado:
+        return jsonify(ok=False, error='El asistente no está disponible en este momento. '
+                                       f"Llámanos al {CONTACTO['telefono']} o escríbenos a {CONTACTO['correo']}."), 503
+    return jsonify(ok=True, texto=r['texto'], escalado=r['escalado'])
+
+
+@app.cli.command('asistente-costos')
+def asistente_costos():
+    """Muestra tokens y costo estimado del asistente (total y promedio por conversación)."""
+    r = db.resumen_costos_asistente()
+    n = r['conversaciones'] or 1
+    click.echo(f"Conversaciones: {r['conversaciones']}  ·  turnos: {r['turnos']}  ·  llamadas a la API: {r['llamadas']}")
+    click.echo(f"Tokens entrada: {r['entrada']:,}  ·  salida: {r['salida']:,}  ·  caché leída: {r['cache_lectura']:,}  ·  caché escrita: {r['cache_escritura']:,}")
+    click.echo(f"Costo estimado total: US${r['costo']:.4f}  ·  promedio por conversación: US${r['costo'] / n:.4f}")
+
+
+# ---------------------------------------------------------------------------
 # Errores
 # ---------------------------------------------------------------------------
 
@@ -503,6 +544,12 @@ def nueva_cotizacion():
 def no_encontrado(_e):
     return render_template('sitio/error.html', codigo=404, titulo='Página no encontrada',
                            mensaje='La página que buscas no existe o fue movida.'), 404
+
+
+@app.errorhandler(403)
+def prohibido(_e):
+    return render_template('sitio/error.html', codigo=403, titulo='Acceso restringido',
+                           mensaje='Tu usuario no tiene permiso para ver esta sección.'), 403
 
 
 @app.errorhandler(500)
@@ -530,4 +577,5 @@ def avanzar_envio(guia, estado, ubicacion, descripcion):
 
 
 if __name__ == '__main__':
+    db.preparar_base(app)
     app.run(debug=os.getenv('FLASK_DEBUG') == '1', port=5001)

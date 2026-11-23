@@ -1,0 +1,64 @@
+{% extends 'admin/_base.html' %}
+{% block title %}{{ envio.guia }} · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Envío {{ envio.guia }}{% endblock %}
+{% block admin %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <section class="panel">
+      <div class="row g-3">
+        {% for titulo, p in [('Remitente', envio.remitente), ('Destinatario', envio.destinatario)] %}
+        <div class="col-md-6"><h2 class="h6 text-brand text-uppercase">{{ titulo }}</h2>
+          <p class="mb-1 fw-bold">{{ p.nombre }}</p><p class="mb-1 small">{{ p.calle }}, {{ p.colonia }}, {{ p.ciudad }}, {{ p.estado }} {{ p.cp }}</p>
+          <p class="mb-0 small text-muted">Tel. {{ p.telefono }}{% if p.correo %} · {{ p.correo }}{% endif %}</p></div>
+        {% endfor %}
+      </div>
+      <div class="divider-dashed"></div>
+      <dl class="kv">
+        <dt>Estado</dt><dd>{{ nombres_estado[envio.estado] }}</dd>
+        <dt>Servicio</dt><dd>{{ tarifas.TIPOS_ENVIO[envio.cotizacion.tipo_envio].nombre }} · {{ envio.cotizacion.peso_facturable }} kg</dd>
+        <dt>Entrega estimada</dt><dd>{{ envio.cotizacion.fecha_min | fecha }} – {{ envio.cotizacion.fecha_max | fecha }}</dd>
+        <dt>Total</dt><dd>{{ envio.total | moneda }}</dd>
+        <dt>Repartidor</dt><dd>{{ envio.repartidor.nombre if envio.repartidor else 'Sin asignar' }}</dd>
+        <dt>Código de entrega</dt><dd style="font-family: Consolas, monospace">{{ envio.codigo_entrega }}</dd>
+        {% if envio.fecha_preferida or envio.instruccion_entrega %}
+        <dt>Preferencia del cliente</dt><dd>{{ envio.fecha_preferida | fecha if envio.fecha_preferida }} {{ envio.instruccion_entrega or '' }} {{ envio.nota_entrega or '' }}</dd>
+        {% endif %}
+      </dl>
+    </section>
+    {% if prueba %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-solid fa-signature"></i> Prueba de entrega</h2>
+      <p class="mb-2">Recibió <strong>{{ prueba.receptor_nombre }}</strong> ({{ prueba.relacion }}) el {{ prueba.fecha.isoformat() | fecha_hora }}{% if prueba.lat %} · <a target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat={{ prueba.lat }}&mlon={{ prueba.lng }}#map=18/{{ prueba.lat }}/{{ prueba.lng }}">ver ubicación</a>{% endif %}</p>
+      {% if prueba.firma_png %}<img src="{{ prueba.firma_png }}" alt="Firma de quien recibió" style="max-width: 320px; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: #fff">{% endif %}
+      {% if prueba.foto_archivo %}<p class="small mt-2 mb-0"><i class="fa-regular fa-image me-1"></i> <a href="{{ url_for('admin.foto_entrega', nombre=prueba.foto_archivo) }}" target="_blank">Ver foto de la entrega</a></p>{% endif %}
+    </section>
+    {% endif %}
+    {% if incidencias %}
+    <section class="panel"><h2 class="panel-title"><i class="fa-solid fa-triangle-exclamation"></i> Incidencias</h2>
+      <ul class="line-items">{% for i in incidencias %}<li><span>{{ i.tipo }}{% if i.nota %} — {{ i.nota }}{% endif %}</span><span>{{ i.fecha.isoformat() | fecha_hora }}</span></li>{% endfor %}</ul></section>
+    {% endif %}
+  </div>
+  <div class="col-lg-5">
+    <form class="panel" method="post" action="{{ url_for('admin.asignar') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="guia" value="{{ envio.guia }}">
+      <h2 class="panel-title"><i class="fa-solid fa-user-check"></i> Repartidor</h2>
+      <select name="repartidor_id" class="form-select mb-2" aria-label="Repartidor"><option value="">— Sin asignar —</option>
+        {% for r in repartidores %}<option value="{{ r.id }}" {{ 'selected' if envio.repartidor_id == r.id }}>{{ r.nombre }}</option>{% endfor %}</select>
+      <button class="btn btn-outline-primary btn-sm">Guardar</button>
+    </form>
+    <form class="panel" method="post" action="{{ url_for('admin.cambiar_estado', guia=envio.guia) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <h2 class="panel-title"><i class="fa-solid fa-pen"></i> Registrar estado manualmente</h2>
+      <select name="estado" class="form-select mb-2" aria-label="Nuevo estado">
+        {% for k in ['recolectado', 'en_transito', 'en_reparto', 'entregado'] %}<option value="{{ k }}">{{ nombres_estado[k] }}</option>{% endfor %}
+      </select>
+      <input name="ubicacion" class="form-control mb-2" maxlength="200" placeholder="Ubicación (opcional)" aria-label="Ubicación">
+      <button class="btn btn-outline-primary btn-sm">Registrar</button>
+    </form>
+    <section class="panel"><h2 class="panel-title"><i class="fa-solid fa-clock-rotate-left"></i> Historial</h2>
+      <ol class="timeline">{% for ev in d.eventos %}<li><strong>{{ ev.descripcion }}</strong>{% if ev.ubicacion %}<div>{{ ev.ubicacion }}</div>{% endif %}<div class="when">{{ ev.fecha | fecha_hora }}</div></li>{% endfor %}</ol></section>
+    <section class="panel"><h2 class="panel-title"><i class="fa-regular fa-envelope"></i> Avisos al cliente</h2>
+      <ul class="line-items">{% for n in notifs %}<li><span>{{ n.asunto }}</span><span class="small">{{ n.estado }}</span></li>{% else %}<li><span class="text-muted">Sin avisos (el destinatario no dejó correo).</span></li>{% endfor %}</ul></section>
+  </div>
+</div>
+{% endblock %}

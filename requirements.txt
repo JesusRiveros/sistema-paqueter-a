@@ -7,17 +7,21 @@
 # 2. Instala dependencias:    python -m pip install -r requirements.txt
 # 3. Copia .env.example como .env y completa SECRET_KEY y GOOGLE_MAPS_API_KEY.
 #    (El proyecto de Google Cloud debe tener la facturacion activada.)
-# 4. Inicia la aplicacion:
+# 4. Crea/actualiza la base de datos y carga datos de demostracion (opcional):
 #      cd "sistema paqueteria"
+#      flask --app app db upgrade
+#      flask --app app sembrar-demo          (imprime usuarios y contrasenas demo)
+# 5. Inicia la aplicacion (tambien aplica migraciones pendientes):
 #      python app.py
-#    Sitio: http://127.0.0.1:5001/   Cotizador: http://127.0.0.1:5001/app/
+#    Sitio: http://127.0.0.1:5001/   Cotizador: /app/   Empresas: /empresas/
+#    Acceso repartidores/admin: /iniciar-sesion
 #
 # Pruebas:   cd "sistema paqueteria" ; python -m pytest -q tests
 #
-# Actualizar el rastreo de un envio (estados: creado, recolectado, en_transito,
-# en_reparto, entregado):
-#   cd "sistema paqueteria"
+# Otros comandos (desde "sistema paqueteria"):
 #   flask --app app avanzar-envio BLL-XXXXXXXX en_transito --ubicacion "CEDIS Vallejo, CDMX"
+#   flask --app app asistente-costos      (tokens y costo promedio del asistente)
+#   flask --app app db migrate -m "..."   (despues de cambiar models.py)
 
 Flask>=3.0,<4.0
 python-dotenv>=1.0,<2.0
@@ -25,6 +29,10 @@ requests>=2.31,<3.0
 fpdf2>=2.7,<3.0
 qrcode[pil]>=7.4,<9.0
 Pillow>=10.0,<13.0
+anthropic>=2.12,<3.0
+Flask-SQLAlchemy>=3.1,<4.0
+Flask-Migrate>=4.0,<5.0
+openpyxl>=3.1,<4.0
 
 # Solo para desarrollo
 pytest>=8.0

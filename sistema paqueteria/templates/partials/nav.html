@@ -15,11 +15,16 @@
         <li class="nav-item"><a class="nav-link {{ 'active' if ep == 'home' }}" href="{{ url_for('home') }}" {{ 'aria-current=page' if ep == 'home' }}>Inicio</a></li>
         <li class="nav-item"><a class="nav-link {{ 'active' if en_cotizador }}" href="{{ url_for('index') }}" {{ 'aria-current=page' if en_cotizador }}>Cotizar</a></li>
         <li class="nav-item"><a class="nav-link {{ 'active' if ep == 'rastreo' }}" href="{{ url_for('rastreo') }}" {{ 'aria-current=page' if ep == 'rastreo' }}>Rastrear</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('home', _anchor='servicios') }}">Servicios</a></li>
+        <li class="nav-item"><a class="nav-link {{ 'active' if ep.startswith('empresas.') }}" href="{{ url_for('empresas.inicio') }}">Empresas</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('home', _anchor='contacto') }}">Contacto</a></li>
       </ul>
       <div class="d-flex gap-2 py-3 py-lg-0">
-        <a href="{{ url_for('login') }}" class="btn btn-ghost btn-sm {{ 'active' if ep == 'login' }}"><i class="fa-regular fa-user me-1"></i> Iniciar sesión</a>
+        {% if usuario_actual %}
+        <a href="{{ url_for('admin.panel') if usuario_actual.rol == 'admin' else url_for('repartidor.hoy') }}" class="btn btn-ghost btn-sm">
+          <i class="fa-solid fa-gauge me-1"></i> {{ 'Panel de operaciones' if usuario_actual.rol == 'admin' else 'Mis entregas' }}</a>
+        {% else %}
+        <a href="{{ url_for('auth.login') }}" class="btn btn-ghost btn-sm {{ 'active' if ep == 'auth.login' }}"><i class="fa-regular fa-user me-1"></i> Acceso repartidores</a>
+        {% endif %}
         {% if not en_cotizador %}
         <a href="{{ url_for('index') }}" class="btn btn-primary btn-sm">Cotizar envío</a>
         {% endif %}

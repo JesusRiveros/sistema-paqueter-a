@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Certificado verde · Balula Express{% endblock %}
+{% block body_class %}app-shell{% endblock %}
+{% block asistente %}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <article class="panel text-center certificado">
+        <img src="{{ url_for('static', filename='img/eco-caja.webp') }}" alt="" width="96" height="92" class="mb-3">
+        <p class="eyebrow mb-3"><i class="fa-solid fa-leaf"></i> Certificado verde</p>
+        <h1 class="h2 mb-2">{{ (lote.empresa if lote else envio.remitente.nombre) }}</h1>
+        <p class="section-lead mx-auto mb-4">
+          compensó la huella de carbono de {{ 'sus envíos' if lote else 'su envío' }} con Balula Express
+        </p>
+        <div class="row g-3 justify-content-center mb-4">
+          <div class="col-sm-4"><div class="kpi"><span class="valor text-success">{{ '%.2f' | format(kg) }} kg</span><span class="etiqueta">de CO₂ compensado</span></div></div>
+          <div class="col-sm-4"><div class="kpi"><span class="valor">{{ (aportacion | moneda) }}</span><span class="etiqueta">destinados a reforestación</span></div></div>
+          <div class="col-sm-4"><div class="kpi"><span class="valor">{{ '%.1f' | format(kg / arbol_kg * 365) }}</span><span class="etiqueta">días de absorción de un árbol adulto</span></div></div>
+        </div>
+        <p class="text-muted small mb-1">
+          {% if lote %}Lote {{ lote.folio }} · {{ items }} envíos · {{ lote.creado.isoformat() | fecha(false) }}
+          {% else %}Guía {{ envio.guia }} · {{ envio.creado_en.isoformat() | fecha(false) }}{% endif %}
+        </p>
+        <p class="text-muted small">Cálculo estimado: kg transportados × km × factor de emisión. Equivalencia con base en una absorción aproximada de {{ arbol_kg }} kg de CO₂ por árbol al año.</p>
+        <button class="btn btn-outline-primary no-print" onclick="window.print()"><i class="fa-solid fa-print me-1"></i> Imprimir o guardar como PDF</button>
+      </article>
+    </div>
+  </div>
+</div>
+{% endblock %}

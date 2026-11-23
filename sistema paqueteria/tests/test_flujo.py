@@ -107,7 +107,7 @@ def test_contacto(client, csrf, app):
     assert client.post('/contacto', data={'_csrf': csrf, 'nombre': 'Ana', 'correo': 'mal', 'mensaje': 'x'}).status_code == 302
     client.post('/contacto', data={'_csrf': csrf, 'nombre': 'Ana', 'correo': 'ana@ejemplo.com', 'mensaje': 'Quiero información'})
     with app.app_context():
-        assert db.get_db().execute('SELECT COUNT(*) FROM mensajes').fetchone()[0] == 1
+        assert db.sa.session.query(db.MensajeContacto).count() == 1
 
 
 def test_pagos_simulados_desactivados(client, csrf, app):

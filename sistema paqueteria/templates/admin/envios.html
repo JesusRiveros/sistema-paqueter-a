@@ -1,0 +1,41 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Envíos · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Envíos{% endblock %}
+{% block admin %}
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+  <div class="admin-nav mb-0">
+    {% for clave, nombre in [('activos', 'Activos'), ('sin_asignar', 'Sin repartidor'), ('entregado', 'Entregados'), ('todos', 'Todos')] %}
+    <a href="{{ url_for('admin.envios', filtro=clave) }}" class="{{ 'active' if filtro == clave }}">{{ nombre }}</a>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('admin.auto_asignar_vista') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <button class="btn btn-primary btn-sm"><i class="fa-solid fa-wand-magic-sparkles me-1"></i> Asignar automáticamente</button></form>
+</div>
+<div class="panel p-0" style="overflow-x: auto">
+  <table class="tabla">
+    <thead><tr><th>Guía</th><th>Creado</th><th>Destino</th><th>Servicio</th><th>Estado</th><th>Repartidor</th></tr></thead>
+    <tbody>
+    {% for e in envios %}
+      <tr>
+        <td><a href="{{ url_for('admin.envio_detalle', guia=e.guia) }}" class="fw-semibold">{{ e.guia }}</a></td>
+        <td class="text-nowrap">{{ e.creado_en.isoformat() | fecha_hora }}</td>
+        <td>{{ e.destinatario.colonia }}, {{ e.destinatario.ciudad }}</td>
+        <td>{{ tarifas.TIPOS_ENVIO[e.cotizacion.tipo_envio].nombre }}</td>
+        <td><span class="pill">{{ nombres_estado[e.estado] }}</span></td>
+        <td>
+          {% if e.estado == 'entregado' %}{{ e.repartidor.nombre if e.repartidor else '—' }}{% else %}
+          <form method="post" action="{{ url_for('admin.asignar') }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="guia" value="{{ e.guia }}">
+            <select name="repartidor_id" class="form-select form-select-sm" aria-label="Repartidor para {{ e.guia }}" onchange="this.form.submit()">
+              <option value="">— Sin asignar —</option>
+              {% for r in repartidores %}<option value="{{ r.id }}" {{ 'selected' if e.repartidor_id == r.id }}>{{ r.nombre }} ({{ carga.get(r.id, 0) }})</option>{% endfor %}
+            </select>
+          </form>{% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="text-muted p-4">No hay envíos con este filtro.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="form-text mt-2">La asignación automática elige al repartidor más cercano a cada paquete y equilibra la carga. Entre paréntesis: paquetes pendientes de cada repartidor.</p>
+{% endblock %}

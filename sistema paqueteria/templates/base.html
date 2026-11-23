@@ -30,9 +30,11 @@
   </main>
 
   {% block footer %}{% include 'partials/footer.html' %}{% endblock %}
+  {% block asistente %}{% include 'partials/asistente.html' %}{% endblock %}
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/sitio.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/asistente.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

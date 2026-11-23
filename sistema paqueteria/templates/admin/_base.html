@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block body_class %}app-shell{% endblock %}
+{% block asistente %}{% endblock %}
+{% block footer %}{% include 'partials/app_footer.html' %}{% endblock %}
+{% block content %}
+<div class="container-xl pb-5">
+  <header class="app-header d-flex flex-wrap justify-content-between align-items-end gap-2">
+    <div><h1>{% block titulo_pagina %}{% endblock %}</h1><p>Panel de operaciones · {{ usuario_actual.nombre }}</p></div>
+    <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="btn btn-ghost btn-sm"><i class="fa-solid fa-right-from-bracket me-1"></i> Cerrar sesión</button></form>
+  </header>
+  {% set ep = request.endpoint %}
+  <nav class="admin-nav" aria-label="Secciones del panel">
+    {% for endpoint, nombre, icono in [('admin.panel', 'Resumen', 'fa-chart-line'), ('admin.envios', 'Envíos', 'fa-boxes-stacked'), ('admin.mapa', 'Mapa en vivo', 'fa-map-location-dot'), ('admin.repartidores', 'Equipo', 'fa-users'), ('admin.atencion', 'Atención a clientes', 'fa-headset')] %}
+    <a href="{{ url_for(endpoint) }}" class="{{ 'active' if ep == endpoint or (endpoint == 'admin.envios' and ep == 'admin.envio_detalle') }}"><i class="fa-solid {{ icono }} me-1"></i>{{ nombre }}
+      {% if endpoint == 'admin.atencion' and pendientes_atencion %}<span class="badge rounded-pill ms-1">{{ pendientes_atencion }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  {% block admin %}{% endblock %}
+</div>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Mapa en vivo · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Mapa en vivo{% endblock %}
+{% block head %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">{% endblock %}
+{% block admin %}
+<div class="panel p-2"><div id="mapa-vivo" class="map-box" style="height: 560px"></div></div>
+<p class="form-text mt-2">
+  <span class="pin-num d-inline-block align-middle me-1"><span style="background:#3D1405;width:18px;height:18px"></span></span> Repartidor (última posición de las últimas 2 h) ·
+  <span class="pin-num d-inline-block align-middle me-1"><span style="background:#FD3700;width:18px;height:18px"></span></span> Paquete asignado ·
+  <span class="pin-num d-inline-block align-middle me-1"><span style="background:#8C7D76;width:18px;height:18px"></span></span> Sin asignar.
+  {{ ubic | length }} repartidor(es) con ubicación · {{ paquetes | length }} paquete(s) activos con coordenadas.
+</p>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  (function () {
+    var ubic = {{ ubic | tojson }}, paquetes = {{ paquetes | tojson }}, cedis = {{ cedis | list | tojson }};
+    var m = L.map('mapa-vivo').setView(cedis, 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(m);
+    function pin(lat, lng, color, html) {
+      return L.marker([lat, lng], { icon: L.divIcon({ className: 'pin-num', html: '<span style="background:' + color + '">' + (html || '') + '</span>', iconSize: [30, 30], iconAnchor: [15, 15] }) });
+    }
+    function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : t; return d.innerHTML; }
+    var puntos = [cedis];
+    pin(cedis[0], cedis[1], '#261812', '<i class="fa-solid fa-warehouse"></i>').addTo(m).bindPopup('CEDIS Vallejo');
+    paquetes.forEach(function (p) {
+      puntos.push([p.lat, p.lng]);
+      pin(p.lat, p.lng, p.repartidor ? '#FD3700' : '#8C7D76', '<i class="fa-solid fa-box"></i>').addTo(m)
+        .bindPopup('<strong>' + esc(p.guia) + '</strong><br>' + esc(p.estado) + '<br>' + esc(p.repartidor || 'Sin asignar'));
+    });
+    ubic.forEach(function (u) {
+      puntos.push([u.lat, u.lng]);
+      pin(u.lat, u.lng, '#3D1405', '<i class="fa-solid fa-truck"></i>').addTo(m).bindPopup('<strong>' + esc(u.nombre) + '</strong><br>hace ' + u.hace_min + ' min');
+    });
+    if (puntos.length > 1) m.fitBounds(puntos, { padding: [30, 30] });
+    setTimeout(function () { location.reload(); }, 60000);  // refresco cada minuto
+  })();
+</script>
+{% endblock %}
