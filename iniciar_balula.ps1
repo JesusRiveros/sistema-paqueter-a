@@ -11,7 +11,14 @@ $python = Join-Path $raiz '.venv\Scripts\python.exe'
 $tunel = 'balula'
 
 if (-not (Test-Path $python)) { throw "No encuentro el entorno virtual en $python (crea .venv e instala requirements.txt)." }
-if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
+# Busca cloudflared en el PATH y, si la terminal se abrio antes de instalarlo (p. ej. la de VS Code),
+# en las carpetas donde lo deja el instalador.
+$cloudflared = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
+if (-not $cloudflared) {
+    $cloudflared = @("${env:ProgramFiles(x86)}\cloudflared\cloudflared.exe", "$env:ProgramFiles\cloudflared\cloudflared.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $cloudflared) {
     throw 'cloudflared no esta instalado. Instalalo con:  winget install --id Cloudflare.cloudflared'
 }
 if (-not (Test-Path (Join-Path $raiz '.env'))) { throw 'Falta el archivo .env en la carpeta del proyecto (copia .env.example).' }
@@ -29,7 +36,7 @@ for ($i = 0; $i -lt 40; $i++) {
 if (-not $listo) { Stop-Process -Id $procApp.Id -ErrorAction SilentlyContinue; throw 'La app no respondio en 40 s. Revisa la ventana de la app para ver el error.' }
 
 Write-Host "[2/3] Iniciando el tunel de Cloudflare '$tunel' ..." -ForegroundColor Cyan
-$procTunel = Start-Process -FilePath 'cloudflared' -ArgumentList 'tunnel', 'run', $tunel -PassThru
+$procTunel = Start-Process -FilePath $cloudflared -ArgumentList 'tunnel', 'run', $tunel -PassThru
 Set-Content -Path (Join-Path $raiz '.balula_pids') -Value "$($procApp.Id),$($procTunel.Id)"
 Start-Sleep -Seconds 6
 

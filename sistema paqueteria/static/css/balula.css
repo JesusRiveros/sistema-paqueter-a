@@ -173,6 +173,13 @@ img { max-width: 100%; height: auto; }
 .input-icon { position: relative; }
 .input-icon > i { position: absolute; left: .95rem; top: 50%; transform: translateY(-50%); color: var(--b-500); pointer-events: none; }
 .input-icon > .form-control { padding-left: 2.6rem; }
+/* Sugerencias de direcciones (autocompletado de Google Places) */
+.sugerencias { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid #E8D9D2; border-radius: .75rem; box-shadow: 0 12px 28px rgba(40, 20, 10, .12); overflow: hidden; }
+.sugerencia { padding: .6rem .9rem; cursor: pointer; display: flex; flex-direction: column; line-height: 1.25; }
+.sugerencia + .sugerencia { border-top: 1px solid #F3E9E4; }
+.sugerencia.activa, .sugerencia:hover { background: var(--b-50); }
+.sugerencia .principal { font-weight: 600; color: var(--ink, #1f1a17); }
+.sugerencia .secundario { font-size: .85rem; color: var(--ink-2, #6b5f59); }
 .input-group-text { background: var(--b-50); border-color: #E8D9D2; color: var(--ink-2); font-weight: 600; font-size: .9rem; }
 .form-check-input:checked { background-color: var(--b-600); border-color: var(--b-600); }
 .form-check-input:focus { border-color: var(--b-400); box-shadow: 0 0 0 .25rem rgba(253, 55, 0, .15); }

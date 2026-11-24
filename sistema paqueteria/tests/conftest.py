@@ -7,8 +7,15 @@ import pytest
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ['GOOGLE_MAPS_API_KEY'] = ''  # las pruebas nunca llaman a Google
-os.environ['ANTHROPIC_API_KEY'] = ''    # ni a Claude
+# Las pruebas nunca usan las llaves ni la configuración de publicación del .env real: se fijan aquí
+# ANTES de importar la app (load_dotenv no sobrescribe variables que ya existen).
+for _var in ('GOOGLE_MAPS_API_KEY', 'ANTHROPIC_API_KEY',            # nunca llamar a Google ni a Claude
+             'STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET',  # ni a Stripe
+             'TWILIO_AUTH_TOKEN', 'TWILIO_NUMERO_HUMANO',
+             'SMTP_HOST', 'SMTP_USUARIO', 'SMTP_PASSWORD',            # ni mandar correos
+             'PUBLIC_BASE_URL'):
+    os.environ[_var] = ''
+os.environ.update(TRUST_PROXY='0', SESSION_COOKIE_SECURE='0', FLASK_DEBUG='0', PAGOS_SIMULADOS='1')
 _tmp = tempfile.mkdtemp(prefix='balula-tests-')
 os.environ['DATABASE_URL'] = 'sqlite:///' + os.path.join(_tmp, 'test.sqlite3').replace(os.sep, '/')
 os.environ['UPLOAD_FOLDER'] = os.path.join(_tmp, 'archivos')
