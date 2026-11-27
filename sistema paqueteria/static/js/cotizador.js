@@ -172,23 +172,93 @@
     });
   });
 
-  window.balulaInitMaps = function () {
-    var opciones = { fields: ['geometry', 'formatted_address'], componentRestrictions: { country: 'mx' } };
-    ['origen', 'destino'].forEach(function (campo) {
-      var input = $(campo);
-      var auto = new google.maps.places.Autocomplete(input, opciones);
-      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
-      auto.addListener('place_changed', function () {
-        var lugar = auto.getPlace();
-        if (!lugar.geometry || !lugar.geometry.location) return;
-        lugares[campo] = lugar.geometry.location;
-        if (lugar.formatted_address) input.value = lugar.formatted_address;
-        $(campo + '_lat').value = lugar.geometry.location.lat();
-        $(campo + '_lng').value = lugar.geometry.location.lng();
+  // Autocompletado con Places API (New): AutocompleteSuggestion + Place.fetchFields.
+  // (El widget clásico google.maps.places.Autocomplete usa la Places API "legacy", que Google
+  //  ya no permite habilitar en proyectos nuevos.)
+  function autocompletar(campo) {
+    var input = $(campo);
+    var lista = document.createElement('div');
+    lista.className = 'sugerencias';
+    lista.setAttribute('role', 'listbox');
+    lista.hidden = true;
+    input.parentNode.appendChild(lista);
+    input.setAttribute('aria-autocomplete', 'list');
+
+    var token = null, espera = null, consulta = 0, activa = -1, opciones = [];
+
+    function cerrar() { lista.hidden = true; lista.innerHTML = ''; opciones = []; activa = -1; }
+    function resaltar(i) {
+      activa = i;
+      Array.prototype.forEach.call(lista.children, function (el, j) { el.classList.toggle('activa', j === i); });
+    }
+
+    function elegir(prediccion) {
+      cerrar();
+      input.value = prediccion.text.toString();
+      var lugar = prediccion.toPlace();
+      lugar.fetchFields({ fields: ['location', 'formattedAddress'] }).then(function () {
+        token = null; // la sesión de facturación termina al pedir los detalles
+        if (!lugar.location) return;
+        lugares[campo] = lugar.location;
+        if (lugar.formattedAddress) input.value = lugar.formattedAddress;
+        $(campo + '_lat').value = lugar.location.lat();
+        $(campo + '_lng').value = lugar.location.lng();
         input.classList.remove('is-invalid');
         trazarRuta();
+      }).catch(function () { trazarRuta(true); });
+    }
+
+    function buscar() {
+      var texto = input.value.trim();
+      if (texto.length < 3) { cerrar(); return; }
+      if (!token) token = new google.maps.places.AutocompleteSessionToken();
+      var n = ++consulta;
+      google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: texto, sessionToken: token, includedRegionCodes: ['mx'], language: 'es', region: 'mx'
+      }).then(function (r) {
+        if (n !== consulta) return; // llegó tarde: ya hay una búsqueda más nueva
+        lista.innerHTML = '';
+        opciones = r.suggestions.filter(function (s) { return s.placePrediction; })
+          .map(function (s) { return s.placePrediction; });
+        opciones.forEach(function (p, i) {
+          var el = document.createElement('div');
+          el.className = 'sugerencia';
+          el.setAttribute('role', 'option');
+          var principal = p.mainText ? p.mainText.toString() : p.text.toString();
+          var secundario = p.secondaryText ? p.secondaryText.toString() : '';
+          el.innerHTML = '<span class="principal"></span><span class="secundario"></span>';
+          el.firstChild.textContent = principal;
+          el.lastChild.textContent = secundario;
+          // mousedown (no click) para que corra antes del blur del input
+          el.addEventListener('mousedown', function (e) { e.preventDefault(); elegir(p); });
+          el.addEventListener('mouseenter', function () { resaltar(i); });
+          lista.appendChild(el);
+        });
+        lista.hidden = opciones.length === 0;
+        activa = -1;
+      }).catch(function (err) {
+        cerrar();
+        if (window.console) console.warn('Autocompletado de Google no disponible:', err);
       });
+    }
+
+    input.addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(buscar, 250); });
+    input.addEventListener('blur', function () { setTimeout(cerrar, 150); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' && opciones.length) { e.preventDefault(); resaltar((activa + 1) % opciones.length); }
+      else if (e.key === 'ArrowUp' && opciones.length) { e.preventDefault(); resaltar((activa - 1 + opciones.length) % opciones.length); }
+      else if (e.key === 'Escape') { cerrar(); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!lista.hidden && opciones.length) elegir(opciones[activa >= 0 ? activa : 0]);
+      }
     });
+  }
+
+  window.balulaInitMaps = function () {
+    if (google.maps.places && google.maps.places.AutocompleteSuggestion) {
+      ['origen', 'destino'].forEach(autocompletar);
+    }
     // si se vuelve con direcciones ya escritas (p. ej. desde "Modificar"), trazar con texto
     if ($('origen').value && $('destino').value) trazarRuta(true);
   };

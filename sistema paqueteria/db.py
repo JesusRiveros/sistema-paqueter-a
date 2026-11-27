@@ -154,6 +154,13 @@ def obtener_conversacion(conversacion_id):
     return {col.key: getattr(c, col.key) for col in inspect(Conversacion).mapper.column_attrs}
 
 
+def cambiar_canal(conversacion_id, canal):
+    conv = sa.session.get(Conversacion, conversacion_id)
+    if conv and conv.canal != canal:
+        conv.canal = canal
+        sa.session.commit()
+
+
 def agregar_chat_mensaje(conversacion_id, rol, texto):
     sa.session.add(ChatMensaje(conversacion_id=conversacion_id, rol=rol, texto=texto))
     conv = sa.session.get(Conversacion, conversacion_id)

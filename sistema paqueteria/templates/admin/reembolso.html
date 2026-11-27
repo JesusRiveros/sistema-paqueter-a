@@ -1,0 +1,95 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Caso {{ caso.folio }} · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Caso {{ caso.folio }}{% endblock %}
+{% set estados_reembolso = {'succeeded': ('Reembolsado', 'ok'), 'pending': ('En proceso', 'riesgo-medio'), 'requires_action': ('Requiere acción', 'riesgo-medio'), 'failed': ('Falló', 'riesgo-alto'), 'canceled': ('Cancelado', 'riesgo-alto'), 'error': ('Error al reembolsar', 'riesgo-alto'), 'manual': ('Devolución manual', '')} %}
+{% block admin %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <section class="panel">
+      <dl class="kv">
+        <dt>Problema</dt><dd>{{ problemas[caso.problema] }}</dd>
+        <dt>Guía</dt><dd><a href="{{ url_for('admin.envio_detalle', guia=caso.guia) }}">{{ caso.guia }}</a> · pagó {{ envio.total | moneda }}</dd>
+        <dt>Cliente</dt><dd>{{ caso.cliente_rol }} · tel. ••••{{ caso.cliente_telefono[-4:] }}{% if caso.correo_contacto %} · {{ caso.correo_contacto }}{% endif %}</dd>
+        <dt>Resolución elegida</dt><dd>{{ resoluciones.get(caso.resolucion, '—') }}</dd>
+        <dt>Monto</dt><dd>{{ caso.monto | moneda if caso.monto else '—' }}</dd>
+        {% if caso.cupon_codigo %}<dt>Cupón</dt><dd>{{ caso.cupon_codigo }}</dd>{% endif %}
+        {% if caso.reenvio_guia %}<dt>Reenvío</dt><dd><a href="{{ url_for('admin.envio_detalle', guia=caso.reenvio_guia) }}">{{ caso.reenvio_guia }}</a></dd>{% endif %}
+        {% if repartidor %}<dt>Repartidor señalado</dt><dd>{{ repartidor.nombre }}</dd>{% endif %}
+        <dt>Estado</dt><dd>{{ caso.estado }}</dd>
+        {% if caso.motivo_estado %}<dt>Por qué</dt><dd>{{ caso.motivo_estado }}</dd>{% endif %}
+        {% if caso.resuelto_por %}<dt>Resolvió</dt><dd>{{ caso.resuelto_por }}{% if caso.resuelto %} · {{ caso.resuelto.isoformat() | fecha_hora }}{% endif %}</dd>{% endif %}
+        {% if caso.nota_admin %}<dt>Nota</dt><dd>{{ caso.nota_admin }}</dd>{% endif %}
+      </dl>
+      <div class="divider-dashed"></div>
+      <p class="mb-1 fw-semibold">Lo que dijo el cliente</p>
+      <p class="mb-0">{{ caso.detalle or '—' }}</p>
+    </section>
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-solid fa-list-check"></i> Opciones que se le ofrecieron</h2>
+      <ul class="line-items">{% for o in caso.opciones %}<li><span>{{ o.descripcion }}</span><span>{{ o.monto_mxn | moneda if o.monto_mxn else (o.cupon_pct ~ '%' if o.cupon_pct else '') }}</span></li>{% endfor %}</ul>
+    </section>
+    {% if caso.transcripcion %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-solid fa-comments"></i> Conversación</h2>
+      <pre class="small mb-0" style="white-space: pre-wrap; font-family: inherit">{{ caso.transcripcion }}</pre>
+    </section>
+    {% endif %}
+  </div>
+  <div class="col-lg-5">
+    {% if caso.resolucion == 'reembolso' and caso.estado in ('aprobado_auto', 'aprobado_admin') %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-brands fa-stripe-s"></i> Reembolso en Stripe</h2>
+      {% set er = estados_reembolso.get(caso.reembolso_estado, (caso.reembolso_estado or 'Sin ejecutar', '')) %}
+      <dl class="kv mb-3">
+        <dt>Estado real</dt><dd><span class="pill {{ er[1] }}">{{ er[0] }}</span></dd>
+        <dt>Monto</dt><dd>{{ caso.monto | moneda }}</dd>
+        {% if caso.stripe_refund_id %}<dt>ID del reembolso</dt><dd style="font-family: Consolas, monospace; font-size: .85rem">{{ caso.stripe_refund_id }}</dd>{% endif %}
+        <dt>Pago original</dt><dd style="font-family: Consolas, monospace; font-size: .85rem">{{ pago_original or 'sin pago en Stripe' }}</dd>
+      </dl>
+      {% if caso.reembolso_error %}<p class="small text-danger">{{ caso.reembolso_error }}</p>{% endif %}
+      <div class="d-flex gap-2">
+        {% if caso.stripe_refund_id %}
+        <form method="post" action="{{ url_for('admin.reembolso_stripe', folio=caso.folio) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-primary btn-sm" name="accion" value="actualizar"><i class="fa-solid fa-rotate me-1"></i> Consultar en Stripe</button></form>
+        {% endif %}
+        {% if caso.reembolso_estado in ('error', 'failed', 'canceled') %}
+        <form method="post" action="{{ url_for('admin.reembolso_stripe', folio=caso.folio) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm" name="accion" value="reintentar"><i class="fa-solid fa-redo me-1"></i> Reintentar reembolso</button></form>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+    {% if caso.estado == 'pendiente' %}
+    <form class="panel" method="post" action="{{ url_for('admin.reembolso_resolver', folio=caso.folio) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <h2 class="panel-title"><i class="fa-solid fa-gavel"></i> Decidir</h2>
+      <label class="form-label" for="nota">Nota para el cliente <span class="text-muted fw-normal">(opcional)</span></label>
+      <textarea class="form-control mb-3" id="nota" name="nota" rows="3" maxlength="1000"></textarea>
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1" name="decision" value="aprobar"><i class="fa-solid fa-check me-1"></i> Aprobar</button>
+        <button class="btn btn-outline-primary flex-grow-1" name="decision" value="rechazar"><i class="fa-solid fa-xmark me-1"></i> Rechazar</button>
+      </div>
+      <p class="form-text mt-2 mb-0">Al decidir, el cliente recibe un aviso automático por correo{% if not caso.correo_contacto %} (este cliente no dejó correo: avísale por teléfono){% endif %}.</p>
+    </form>
+    {% endif %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-solid fa-signature"></i> Evidencia de entrega del repartidor</h2>
+      {% if evidencia_entrega.hay_registro %}
+      <dl class="kv">
+        <dt>Fecha y hora</dt><dd>{{ evidencia_entrega.fecha_hora }}</dd>
+        <dt>Recibió</dt><dd>{{ evidencia_entrega.recibio }} ({{ evidencia_entrega.relacion }})</dd>
+        <dt>Foto</dt><dd>{{ 'Sí' if evidencia_entrega.tiene_foto else 'No' }}</dd>
+        <dt>Firma</dt><dd>{{ 'Sí' if evidencia_entrega.tiene_firma else 'No' }}</dd>
+        <dt>Distancia al domicilio</dt><dd>{{ (evidencia_entrega.distancia_al_domicilio_m ~ ' m') if evidencia_entrega.distancia_al_domicilio_m is not none else 'Sin ubicación' }}</dd>
+      </dl>
+      {% else %}<p class="text-muted mb-0">No hay registro de entrega.</p>{% endif %}
+    </section>
+    {% if fotos %}
+    <section class="panel">
+      <h2 class="panel-title"><i class="fa-solid fa-camera"></i> Fotos del cliente</h2>
+      <div class="d-grid gap-2">{% for f in fotos %}<a href="{{ url_for('admin.foto_entrega', nombre=f.archivo) }}" target="_blank"><img src="{{ url_for('admin.foto_entrega', nombre=f.archivo) }}" alt="Foto del daño subida por el cliente" style="width: 100%; border-radius: 10px"></a>{% endfor %}</div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

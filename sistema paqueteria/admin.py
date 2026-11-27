@@ -10,7 +10,7 @@ import db
 import notificaciones
 import rutas
 from auth import login_requerido
-from models import (ChatMensaje, Conversacion, Envio, Escalamiento, Incidencia, MensajeContacto, Notificacion,
+from models import (Caso, ChatMensaje, Conversacion, Envio, Escalamiento, Incidencia, MensajeContacto, Notificacion,
                     PruebaEntrega, Queja, UbicacionRepartidor, Usuario, sa)
 from repartidor import CEDIS
 
@@ -46,7 +46,8 @@ def contadores():
     return {'pendientes_atencion': (
         sa.session.query(MensajeContacto).filter_by(atendido=False).count()
         + sa.session.query(Escalamiento).filter_by(estado='pendiente').count()
-        + sa.session.query(Queja).filter_by(estado='abierta').count())}
+        + sa.session.query(Queja).filter_by(estado='abierta').count()),
+        'reembolsos_pendientes': sa.session.query(Caso).filter_by(estado='pendiente').count()}
 
 
 # ---------------------------------------------------------------- Indicadores
@@ -204,7 +205,10 @@ def mapa():
 @bp.route('/repartidores')
 @login_requerido('admin')
 def repartidores():
-    return render_template('admin/repartidores.html', repartidores=_repartidores(activos=False), carga=_pendientes_por_repartidor())
+    quejas = dict(sa.session.execute(select(Queja.repartidor_id, func.count()).where(Queja.repartidor_id.is_not(None))
+                                      .group_by(Queja.repartidor_id)).all())
+    return render_template('admin/repartidores.html', repartidores=_repartidores(activos=False), carga=_pendientes_por_repartidor(),
+                           quejas=quejas)
 
 
 @bp.route('/repartidores/nuevo', methods=['POST'])
@@ -295,3 +299,98 @@ def conversacion(cid):
 def foto_entrega(nombre):
     """Las fotos de entrega no son públicas: solo el personal de operaciones puede verlas."""
     return send_from_directory(current_app.config['UPLOAD_FOLDER'], nombre)
+
+
+# ---------------------------------------------------------------- Reembolsos y políticas
+
+@bp.route('/reembolsos')
+@login_requerido('admin')
+def reembolsos_lista():
+    import reembolsos as rb
+    from models import Caso
+    filtro = request.args.get('filtro', 'pendiente')
+    q = select(Caso).where(Caso.estado != 'propuesto').order_by(Caso.creado.desc())
+    if filtro == 'pendiente':
+        q = q.where(Caso.estado == 'pendiente')
+    elif filtro == 'automaticos':
+        q = q.where(Caso.estado == 'aprobado_auto')
+    elif filtro == 'resueltos':
+        q = q.where(Caso.estado.in_(['aprobado_admin', 'rechazado']))
+    casos = sa.session.scalars(q.limit(200)).all()
+    totales = dict(sa.session.execute(select(Caso.estado, func.coalesce(func.sum(Caso.monto), 0)).group_by(Caso.estado)).all())
+    return render_template('admin/reembolsos.html', casos=casos, filtro=filtro, problemas=rb.PROBLEMAS,
+                           resoluciones=rb.RESOLUCIONES, totales=totales)
+
+
+@bp.route('/reembolsos/<folio>')
+@login_requerido('admin')
+def reembolso_detalle(folio):
+    import reembolsos as rb
+    from models import Caso, Evidencia
+    caso = sa.session.scalar(select(Caso).where(Caso.folio == folio)) or abort(404)
+    envio = db.obtener_envio_modelo(caso.guia)
+    _, evidencia_entrega = rb.evidencia_entrega(envio)
+    fotos = sa.session.scalars(select(Evidencia).where(Evidencia.guia == caso.guia, Evidencia.archivo.is_not(None))).all()
+    objetivo = db.obtener_envio_modelo(caso.reembolso_guia or caso.guia)
+    return render_template('admin/reembolso.html', caso=caso, envio=envio, problemas=rb.PROBLEMAS, resoluciones=rb.RESOLUCIONES,
+                           pago_original=objetivo.stripe_payment_intent if objetivo else None,
+                           evidencia_entrega=evidencia_entrega, fotos=fotos,
+                           repartidor=sa.session.get(Usuario, caso.repartidor_id) if caso.repartidor_id else None)
+
+
+@bp.route('/reembolsos/<folio>/resolver', methods=['POST'])
+@login_requerido('admin')
+def reembolso_resolver(folio):
+    import reembolsos as rb
+    from flask import g
+    from models import Caso
+    caso = sa.session.scalar(select(Caso).where(Caso.folio == folio)) or abort(404)
+    decision = request.form.get('decision')
+    if decision not in ('aprobar', 'rechazar'):
+        abort(400)
+    try:
+        rb.resolver_pendiente(caso, decision == 'aprobar', g.usuario.correo, request.form.get('nota', ''))
+    except rb.ErrorCaso as e:
+        flash(str(e), 'warning')
+        return redirect(url_for('admin.reembolso_detalle', folio=folio))
+    estado = notificaciones.notificar_caso(caso)
+    aviso = ' Se avisó al cliente por correo.' if estado else ' El cliente no dejó correo: avísale por teléfono.'
+    flash(f"Caso {folio} {'aprobado' if decision == 'aprobar' else 'rechazado'}.{aviso}", 'success')
+    return redirect(url_for('admin.reembolsos_lista'))
+
+
+@bp.route('/politicas', methods=['GET', 'POST'])
+@login_requerido('admin')
+def politicas_vista():
+    import politicas
+    from flask import g
+    if request.method == 'POST':
+        try:
+            politicas.guardar({k: request.form.get(k) for k in politicas.POLITICAS}, g.usuario.correo)
+        except ValueError as e:
+            flash(str(e), 'danger')
+        else:
+            flash('Políticas actualizadas. Aplican desde este momento para nuevos casos.', 'success')
+        return redirect(url_for('admin.politicas_vista'))
+    return render_template('admin/politicas.html', politicas=politicas.POLITICAS, valores=politicas.todas())
+
+
+@bp.route('/reembolsos/<folio>/stripe', methods=['POST'])
+@login_requerido('admin')
+def reembolso_stripe(folio):
+    """Consulta el estado real del reembolso en Stripe, o lo reintenta si falló."""
+    import pagos
+    caso = sa.session.scalar(select(Caso).where(Caso.folio == folio)) or abort(404)
+    if caso.resolucion != 'reembolso' or caso.estado not in ('aprobado_auto', 'aprobado_admin'):
+        abort(400)
+    try:
+        if request.form.get('accion') == 'reintentar' and caso.reembolso_estado in ('error', 'failed', 'canceled'):
+            caso.stripe_refund_id = None
+            pagos.ejecutar_reembolso(caso, reintento=True)
+        else:
+            pagos.actualizar_estado_reembolso(caso)
+        sa.session.commit()
+        flash(f'Estado en Stripe: {caso.reembolso_estado}.', 'success' if caso.reembolso_estado != 'error' else 'danger')
+    except pagos.stripe.StripeError as e:
+        flash(f'Stripe respondió con un error: {e}', 'danger')
+    return redirect(url_for('admin.reembolso_detalle', folio=folio))

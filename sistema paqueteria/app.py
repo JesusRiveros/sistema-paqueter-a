@@ -2,7 +2,7 @@
 import os
 import re
 import secrets
-from datetime import date
+from datetime import date, datetime
 import time
 from functools import wraps
 
@@ -20,12 +20,17 @@ import demo
 import empresas
 import geo
 import notificaciones
+import reembolsos
 import repartidor
 import tarifas
+import voz_twilio
 from guia_pdf import generar_guia_pdf
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '..', '.env'))
+
+import pagos  # noqa: E402
+pagos.validar_llaves()  # con llaves sk_live_ el servidor se niega a arrancar
 
 app = Flask(__name__)
 app.config.update(
@@ -45,6 +50,11 @@ app.config.update(
 os.makedirs(os.path.join(BASE_DIR, 'instance'), exist_ok=True)
 db.init_app(app)
 
+# Detrás de Cloudflare Tunnel: confiar en X-Forwarded-For/Proto/Host del proxy (un solo salto)
+if os.getenv('TRUST_PROXY', '0') == '1':
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 CONTACTO = {
     'empresa': 'Balula Express S.A. de C.V.',
     'direccion': 'Av. Industria #742, Bodega 5, Col. Industrial Vallejo, Alcaldía Azcapotzalco, C.P. 02300, Ciudad de México',
@@ -60,6 +70,8 @@ app.register_blueprint(repartidor.bp)
 app.register_blueprint(admin.bp)
 app.register_blueprint(clientes.bp)
 app.register_blueprint(empresas.bp)
+app.register_blueprint(voz_twilio.bp)
+app.register_blueprint(pagos.bp)
 demo.registrar_comando(app)
 
 RE_TELEFONO = re.compile(r'^\d{10}$')
@@ -98,6 +110,20 @@ def filtro_moneda(valor):
         return '—'
 
 
+@app.url_defaults
+def version_estaticos(endpoint, valores):
+    """Agrega ?v=<fecha de modificación> a cada archivo estático (CSS/JS).
+
+    Cloudflare y el navegador guardan los .js/.css por horas; con esto, al cambiar un archivo cambia su
+    URL y todos reciben la versión nueva al instante (sin pedirle a nadie Ctrl+F5).
+    """
+    if endpoint == 'static' and 'filename' in valores and 'v' not in valores:
+        try:
+            valores['v'] = int(os.path.getmtime(os.path.join(app.static_folder, valores['filename'])))
+        except OSError:
+            pass
+
+
 @app.context_processor
 def contexto_global():
     return {
@@ -108,6 +134,7 @@ def contexto_global():
         'tarifas': tarifas,
         'anio_actual': date.today().year,
         'nombres_estado': db.NOMBRE_ESTADO,
+        'modo_pago': pagos.modo(),
     }
 
 
@@ -125,12 +152,44 @@ def csrf_token():
 def verificar_csrf():
     if request.method != 'POST':
         return
+    if request.blueprint == 'voz_twilio' or request.endpoint == 'pagos.webhook':
+        return  # Twilio y Stripe no envían token CSRF; esas rutas validan la firma del servicio
     enviado = request.form.get('_csrf') or request.headers.get('X-CSRF-Token')
     if not enviado or not secrets.compare_digest(enviado, session.get('_csrf', '')):
         if request.is_json:
             return jsonify(ok=False, error='La sesión expiró. Recarga la página.'), 400
         flash('Tu sesión expiró. Intenta de nuevo.', 'warning')
         return redirect(request.referrer or url_for('home'))
+
+
+@app.before_request
+def dominio_canonico():
+    """www.balulaexpress.com → balulaexpress.com (301), para que sesiones y enlaces usen un solo dominio."""
+    publica = app.config['PUBLIC_BASE_URL']
+    if publica and request.host.startswith('www.') and request.host[4:] == publica.split('://', 1)[-1].split('/')[0]:
+        return redirect(publica + request.full_path.rstrip('?'), 301)
+
+
+@app.route('/salud')
+def salud():
+    """Estado del sistema para la lista de verificación (no expone secretos)."""
+    try:
+        db.sa.session.execute(db.sa.text('SELECT 1'))
+        base_ok = True
+    except Exception:
+        base_ok = False
+    return jsonify(
+        ok=base_ok,
+        base_de_datos='ok' if base_ok else 'error',
+        pagos=pagos.modo(),
+        stripe_webhook=bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
+        asistente=asistente.esta_configurado(),
+        google_maps=bool(app.config['GOOGLE_MAPS_API_KEY']),
+        twilio=bool(os.getenv('TWILIO_AUTH_TOKEN')),
+        correo_smtp=bool(os.getenv('SMTP_HOST')),
+        url_publica=app.config['PUBLIC_BASE_URL'] or None,
+        https=request.scheme == 'https',
+    ), 200 if base_ok else 503
 
 
 @app.after_request
@@ -337,11 +396,14 @@ def _leer_persona(prefijo, f, errores, con_referencias=False):
         errores[f'{prefijo}_telefono'] = 'Escribe un teléfono de 10 dígitos.'
     if not RE_CP.match(p['cp']):
         errores[f'{prefijo}_cp'] = 'El código postal debe tener 5 dígitos.'
+    p['correo'] = f.get(f'{prefijo}_correo', '').strip()[:160]
     if con_referencias:
         p['referencias'] = f.get(f'{prefijo}_referencias', '').strip()[:300]
-        p['correo'] = f.get(f'{prefijo}_correo', '').strip()[:160]
         if p['correo'] and not RE_CORREO.match(p['correo']):
             errores[f'{prefijo}_correo'] = 'Escribe un correo válido o déjalo vacío.'
+    elif not RE_CORREO.match(p['correo']):
+        # El correo de quien paga es obligatorio: ahí llegan el comprobante y los códigos de seguridad
+        errores[f'{prefijo}_correo'] = 'Escribe un correo válido.'
     return p
 
 
@@ -368,17 +430,65 @@ def completar():
 @app.route('/app/pago')
 @requiere('cotizacion', 'contactos')
 def pago():
-    return render_template('cotizador/pago.html', paso_actual=4, c=session['cotizacion'],
-                           contactos=session['contactos'])
+    return render_template('cotizador/pago.html', paso_actual=4, c=cotizacion_con_cupon(),
+                           contactos=session['contactos'], cupon=session.get('cupon'))
+
+
+def cotizacion_con_cupon():
+    """La cotización de la sesión, con el cupón aplicado si hay uno válido."""
+    c = dict(session['cotizacion'])
+    codigo = session.get('cupon')
+    if codigo:
+        cupon, error = reembolsos.validar_cupon(codigo)
+        if cupon:
+            c['detalle'] = reembolsos.aplicar_cupon_a_cotizacion(c['detalle'], cupon)
+        else:
+            session.pop('cupon', None)
+    return c
+
+
+@app.route('/app/cupon', methods=['POST'])
+@requiere('cotizacion', 'contactos')
+def aplicar_cupon():
+    if request.form.get('quitar'):
+        session.pop('cupon', None)
+        return redirect(url_for('pago'))
+    cupon, error = reembolsos.validar_cupon(request.form.get('codigo', ''))
+    if error:
+        flash(error, 'danger')
+    else:
+        session['cupon'] = cupon.codigo
+        flash(f'Cupón aplicado: {cupon.porcentaje}% de descuento.', 'success')
+    return redirect(url_for('pago'))
 
 
 @app.route('/app/procesar_pago', methods=['POST'])
 @requiere('cotizacion', 'contactos')
 def procesar_pago():
-    if not app.config['PAGOS_SIMULADOS']:
+    modo = pagos.modo()
+    if modo == 'stripe':
+        c, contactos = cotizacion_con_cupon(), session['contactos']
+        try:
+            url = pagos.iniciar_checkout(
+                tipo='envio', datos={'cotizacion': c, 'contactos': contactos, 'cupon': session.get('cupon')},
+                total=c['detalle']['total'], correo=contactos['remitente'].get('correo'),
+                descripcion=f"Envío Balula: {contactos['remitente'].get('ciudad', '')} → {contactos['destinatario'].get('ciudad', '')}",
+                url_cancelar=url_for('pago_cancelado'))
+        except pagos.stripe.StripeError as e:
+            app.logger.error('No se pudo crear la sesión de Stripe: %s', e)
+            flash('No pudimos conectar con la pasarela de pago. Intenta de nuevo en un momento.', 'danger')
+            return redirect(url_for('pago'))
+        return redirect(url, 303)
+    if modo == 'no_disponible':
         flash('El pago en línea aún no está disponible. Contáctanos para completar tu envío.', 'warning')
         return redirect(url_for('pago'))
     return redirect(url_for('fake_checkout'))
+
+
+@app.route('/app/pago/cancelado')
+def pago_cancelado():
+    flash('Cancelaste el pago. Tu cotización sigue guardada; puedes intentarlo de nuevo.', 'info')
+    return redirect(url_for('pago') if 'contactos' in session else url_for('index'))
 
 
 @app.route('/app/checkout', methods=['GET', 'POST'], endpoint='fake_checkout')
@@ -386,7 +496,7 @@ def procesar_pago():
 def checkout_simulado():
     if not app.config['PAGOS_SIMULADOS']:
         abort(404)
-    c = session['cotizacion']
+    c = cotizacion_con_cupon()
     if request.method == 'POST':
         resultado_pago = request.form.get('resultado')
         if resultado_pago == 'failure':
@@ -401,6 +511,13 @@ def checkout_simulado():
             correo_destinatario=contactos['destinatario'].get('correo'),
             origen=c.get('origen_geo'), destino=c.get('destino_geo'),
         )
+        db.obtener_envio_modelo(guia).metodo_pago = 'simulado'
+        db.sa.session.commit()
+        if session.get('cupon'):
+            cupon, _ = reembolsos.validar_cupon(session.pop('cupon'))
+            if cupon:
+                cupon.usado, cupon.usado_en_guia = datetime.now(), guia
+                db.sa.session.commit()
         notificaciones.notificar(guia, 'creado')
         session['mis_guias'] = (session.get('mis_guias', []) + [guia])[-20:]
         for clave in ('cotizacion', 'contactos', 'formulario'):
@@ -518,6 +635,7 @@ def asistente_mensaje():
 
     canal = datos.get('canal') if datos.get('canal') in ('web', 'voz') else 'web'
     cid = _conversacion_de_sesion(canal)
+    db.cambiar_canal(cid, canal)  # el cliente puede alternar entre escribir y hablar
     try:
         r = asistente.responder(cid, texto)
     except asistente.AsistenteNoConfigurado:
@@ -574,6 +692,41 @@ def avanzar_envio(guia, estado, ubicacion, descripcion):
     except ValueError as e:
         raise click.ClickException(str(e))
     click.echo(f'{guia.upper()} → {estado}')
+
+
+@app.cli.command('cambiar-password')
+@click.argument('correo')
+@click.password_option('--password', prompt='Nueva contraseña', confirmation_prompt='Repítela',
+                       help='Mínimo 10 caracteres, con letras y números.')
+def cambiar_password_cli(correo, password):
+    """Pone una contraseña nueva a un usuario (admin o repartidor) y lo desbloquea."""
+    db.preparar_base(app)
+    u = db.usuario_por_correo(correo)
+    if not u:
+        raise click.ClickException(f'No existe un usuario con el correo {correo}.')
+    if len(password) < 10 or not any(c.isdigit() for c in password) or not any(c.isalpha() for c in password):
+        raise click.ClickException('La contraseña debe tener al menos 10 caracteres, con letras y números.')
+    u.fijar_password(password)
+    u.intentos_fallidos, u.bloqueado_hasta, u.activo, u.debe_cambiar_password = 0, None, True, False
+    db.sa.session.commit()
+    click.echo(f'Listo: {u.correo} ({u.rol}) ya puede entrar con su nueva contraseña.')
+
+
+@app.cli.command('respaldar-base')
+def respaldar_base():
+    """Copia la base SQLite (en caliente, de forma segura) a la carpeta respaldos/ junto a la base."""
+    import sqlite3
+    from datetime import datetime as _dt
+    url = db.sa.engine.url
+    if url.get_backend_name() != 'sqlite':
+        raise click.ClickException('Este comando es para SQLite. Con PostgreSQL usa pg_dump.')
+    from contextlib import closing
+    carpeta = os.path.join(os.path.dirname(os.path.abspath(url.database)), 'respaldos')
+    os.makedirs(carpeta, exist_ok=True)
+    destino = os.path.join(carpeta, f'balula-{_dt.now():%Y%m%d-%H%M%S}.sqlite3')
+    with closing(sqlite3.connect(url.database)) as origen, closing(sqlite3.connect(destino)) as copia:
+        origen.backup(copia)  # copia consistente aunque la app esté en uso
+    click.echo(f'Respaldo creado: {destino}')
 
 
 if __name__ == '__main__':

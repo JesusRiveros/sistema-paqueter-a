@@ -69,6 +69,8 @@ class Envio(sa.Model):
     instruccion_entrega: Mapped[str | None] = mapped_column(String(30))  # domicilio | vecino | sucursal
     nota_entrega: Mapped[str | None] = mapped_column(String(300))
     lote_folio: Mapped[str | None] = mapped_column(ForeignKey('lotes.folio'), index=True)
+    metodo_pago: Mapped[str | None] = mapped_column(String(20))            # stripe | simulado | reenvio
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(80), index=True)
 
     repartidor: Mapped[Usuario | None] = relationship(back_populates='envios')
     eventos: Mapped[list['Evento']] = relationship(back_populates='envio', order_by='Evento.id',
@@ -181,6 +183,7 @@ class Conversacion(sa.Model):
     tokens_cache_lectura: Mapped[int] = mapped_column(default=0)
     tokens_cache_escritura: Mapped[int] = mapped_column(default=0)
     costo_usd: Mapped[float] = mapped_column(default=0.0)
+    fallos_verificacion: Mapped[int] = mapped_column(default=0)
 
 
 class ChatMensaje(sa.Model):
@@ -206,6 +209,7 @@ class Queja(sa.Model):
     telefono: Mapped[str | None] = mapped_column(String(20))
     estado: Mapped[str] = mapped_column(String(20), default='abierta')
     creada: Mapped[datetime] = mapped_column(default=ahora)
+    repartidor_id: Mapped[int | None] = mapped_column(ForeignKey('usuarios.id'), index=True)
 
 
 class Escalamiento(sa.Model):
@@ -218,3 +222,90 @@ class Escalamiento(sa.Model):
     telefono: Mapped[str | None] = mapped_column(String(20))
     estado: Mapped[str] = mapped_column(String(20), default='pendiente')
     creado: Mapped[datetime] = mapped_column(default=ahora)
+
+
+# ---------------------------------------------------------------- Reembolsos y compensaciones
+
+class Configuracion(sa.Model):
+    """Valores de negocio editables desde el admin (políticas de reembolso, etc.)."""
+    __tablename__ = 'configuracion'
+    clave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    valor: Mapped[dict] = mapped_column(JSON)  # {"v": valor}
+    actualizado: Mapped[datetime] = mapped_column(default=ahora)
+    actualizado_por: Mapped[str | None] = mapped_column(String(160))
+
+
+class Evidencia(sa.Model):
+    """Foto que sube el cliente (p. ej. daño del paquete) mediante un enlace con token."""
+    __tablename__ = 'evidencias'
+    token: Mapped[str] = mapped_column(String(40), primary_key=True)
+    guia: Mapped[str] = mapped_column(ForeignKey('envios.guia'), index=True)
+    conversacion_id: Mapped[str | None] = mapped_column(ForeignKey('conversaciones.id'))
+    archivo: Mapped[str | None] = mapped_column(String(200))
+    creada: Mapped[datetime] = mapped_column(default=ahora)
+    subida: Mapped[datetime | None]
+
+
+class Caso(sa.Model):
+    """Reembolso o compensación (propuesto, aprobado automáticamente, pendiente o resuelto)."""
+    __tablename__ = 'casos'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    folio: Mapped[str] = mapped_column(String(20), unique=True)
+    guia: Mapped[str] = mapped_column(ForeignKey('envios.guia'), index=True)
+    conversacion_id: Mapped[str | None] = mapped_column(ForeignKey('conversaciones.id'))
+    cliente_telefono: Mapped[str] = mapped_column(String(10), index=True)
+    cliente_rol: Mapped[str] = mapped_column(String(20))          # remitente | destinatario
+    cliente_correo: Mapped[str | None] = mapped_column(String(160), index=True)  # correo REGISTRADO (no el que dicta en el chat)
+    otp_hash: Mapped[str | None] = mapped_column(String(64))       # código de 6 dígitos (solo se guarda su hash)
+    otp_expira: Mapped[datetime | None]
+    otp_intentos: Mapped[int] = mapped_column(default=0)
+    correo_contacto: Mapped[str | None] = mapped_column(String(160))
+    problema: Mapped[str] = mapped_column(String(40))
+    detalle: Mapped[str] = mapped_column(Text)
+    opciones: Mapped[list] = mapped_column(JSON)                  # lo que se le ofreció al cliente
+    resolucion: Mapped[str | None] = mapped_column(String(30))    # reembolso | cupon | reenvio | revision
+    monto: Mapped[float] = mapped_column(default=0.0)             # MXN a devolver
+    cupon_codigo: Mapped[str | None] = mapped_column(String(20))
+    estado: Mapped[str] = mapped_column(String(30), default='propuesto')
+    # propuesto | aprobado_auto | pendiente | aprobado_admin | rechazado | descartado
+    motivo_estado: Mapped[str | None] = mapped_column(Text)       # por qué quedó así (reglas aplicadas)
+    turno_propuesta: Mapped[int] = mapped_column(default=0)       # para exigir confirmación en un turno posterior
+    repartidor_id: Mapped[int | None] = mapped_column(ForeignKey('usuarios.id'))
+    reenvio_guia: Mapped[str | None] = mapped_column(String(20))
+    transcripcion: Mapped[str | None] = mapped_column(Text)        # copia de la conversación al decidir
+    creado: Mapped[datetime] = mapped_column(default=ahora)
+    resuelto: Mapped[datetime | None]
+    resuelto_por: Mapped[str | None] = mapped_column(String(160))
+    nota_admin: Mapped[str | None] = mapped_column(Text)
+    # Ejecución real del reembolso (Stripe)
+    reembolso_guia: Mapped[str | None] = mapped_column(String(20))       # guía cuyo pago se reembolsa (p. ej. el cobro duplicado)
+    stripe_refund_id: Mapped[str | None] = mapped_column(String(80), index=True)
+    reembolso_estado: Mapped[str | None] = mapped_column(String(30))     # estado que devuelve Stripe, o manual / error
+    reembolso_error: Mapped[str | None] = mapped_column(Text)
+
+
+class Pedido(sa.Model):
+    """Pago en curso con Stripe Checkout. Al confirmarse el pago se crean el o los envíos."""
+    __tablename__ = 'pedidos'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(10))                        # envio | lote
+    estado: Mapped[str] = mapped_column(String(20), default='pendiente')  # pendiente | pagado | expirado
+    datos: Mapped[dict] = mapped_column(JSON)
+    total: Mapped[float]
+    correo: Mapped[str | None] = mapped_column(String(160))
+    stripe_session_id: Mapped[str | None] = mapped_column(String(120), unique=True)
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(80))
+    guias: Mapped[list | None] = mapped_column(JSON)
+    creado: Mapped[datetime] = mapped_column(default=ahora)
+    pagado: Mapped[datetime | None]
+
+
+class Cupon(sa.Model):
+    __tablename__ = 'cupones'
+    codigo: Mapped[str] = mapped_column(String(20), primary_key=True)
+    porcentaje: Mapped[int]
+    caso_id: Mapped[int | None] = mapped_column(ForeignKey('casos.id'))
+    creado: Mapped[datetime] = mapped_column(default=ahora)
+    vence: Mapped[datetime]
+    usado_en_guia: Mapped[str | None] = mapped_column(String(20))
+    usado: Mapped[datetime | None]

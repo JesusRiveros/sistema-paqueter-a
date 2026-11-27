@@ -6,7 +6,7 @@
   <div class="col-lg-8">
     <div class="panel p-0" style="overflow-x: auto">
       <table class="tabla">
-        <thead><tr><th>Nombre</th><th>Rol</th><th>Zona</th><th>Pendientes</th><th>Último acceso</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Rol</th><th>Zona</th><th>Pendientes</th><th>Quejas</th><th>Último acceso</th><th></th></tr></thead>
         <tbody>
         {% for r in repartidores %}
           <tr class="{{ 'text-muted' if not r.activo }}">
@@ -14,6 +14,7 @@
             <td>{{ r.rol }}</td>
             <td>{{ r.zona or '—' }}</td>
             <td>{{ carga.get(r.id, 0) }}</td>
+            <td>{% if quejas.get(r.id) %}<span class="pill riesgo-alto">{{ quejas.get(r.id) }}</span>{% else %}0{% endif %}</td>
             <td class="small">{{ r.ultimo_acceso.isoformat() | fecha_hora if r.ultimo_acceso else 'Nunca' }}{% if r.bloqueado_hasta %}<br><span class="text-danger">Bloqueado</span>{% endif %}</td>
             <td class="text-nowrap">
               <form method="post" action="{{ url_for('admin.restablecer', uid=r.id) }}" class="d-inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}">
@@ -22,7 +23,7 @@
                 <button class="btn btn-ghost btn-sm">{{ 'Desactivar' if r.activo else 'Activar' }}</button></form>
             </td>
           </tr>
-        {% else %}<tr><td colspan="6" class="text-muted p-4">Aún no hay repartidores.</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="7" class="text-muted p-4">Aún no hay repartidores.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>

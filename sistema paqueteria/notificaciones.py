@@ -70,3 +70,57 @@ def notificar(guia, tipo, detalle=''):
     db.sa.session.add(Notificacion(guia=guia, para=envio.correo_destinatario, asunto=asunto, cuerpo=cuerpo, estado=estado))
     db.sa.session.commit()
     return estado
+
+
+def notificar_caso(caso):
+    """Avisa al cliente la decisión sobre un caso pendiente (aprobado o rechazado)."""
+    import politicas
+    import reembolsos
+    envio = db.obtener_envio_modelo(caso.guia)
+    para = caso.correo_contacto or (envio.correo_destinatario if caso.cliente_rol == 'destinatario' else None)
+    if not para:
+        return None
+    nombre = getattr(envio, caso.cliente_rol, {}).get('nombre', '').split(' ')[0] or 'Hola'
+    if caso.estado == 'aprobado_admin':
+        asunto = f'Tu caso {caso.folio} fue aprobado'
+        detalle = {
+            'reembolso': f"Aprobamos el reembolso de ${caso.monto:,.2f} MXN. Se reflejará en {politicas.obtener('tiempo_reflejo_reembolso')} en tu mismo método de pago.",
+            'cupon': f'Tu cupón es {caso.cupon_codigo}. Úsalo en el paso de pago de tu próximo envío.',
+            'reenvio': f'Registramos el reenvío sin costo con la nueva guía {caso.reenvio_guia}.',
+            'revision': 'Revisamos tu caso y le daremos seguimiento contigo.',
+        }[caso.resolucion]
+    else:
+        asunto = f'Respuesta sobre tu caso {caso.folio}'
+        detalle = 'Revisamos tu caso y en esta ocasión no procede la solicitud.'
+    if caso.nota_admin:
+        detalle += f'\n\nComentario del equipo: {caso.nota_admin}'
+    cuerpo = (f'Hola {nombre}:\n\n{detalle}\n\nGuía: {caso.guia} · {reembolsos.PROBLEMAS[caso.problema]}\n'
+              'Si tienes dudas, responde este correo o escríbenos en el chat del sitio.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=caso.guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado
+
+
+def enviar_enlace_evidencia(guia, para, ruta):
+    """Envía al cliente el enlace para subir la foto del daño (útil en llamadas telefónicas)."""
+    base = current_app.config['PUBLIC_BASE_URL'] or ''
+    url = base + ruta if base else url_for('rastreo', _external=True).rsplit('/rastreo', 1)[0] + ruta
+    asunto = f'Sube la foto de tu paquete {guia}'
+    cuerpo = (f'Hola:\n\nPara ayudarte con tu paquete {guia}, sube una foto donde se vea el daño en este enlace:\n{url}\n\n'
+              'Después avísanos en el chat o por teléfono. El enlace vence en 7 días.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado
+
+
+def enviar_codigo_verificacion(guia, para, codigo, minutos):
+    asunto = f'Tu código de seguridad Balula: {codigo}'
+    cuerpo = (f'Tu código para confirmar la solicitud sobre el envío {guia} es:\n\n    {codigo}\n\n'
+              f'Vence en {minutos} minutos. Díselo solo a Lula, en el chat o por teléfono de Balula Express. '
+              'Si tú no lo pediste, ignora este correo: nadie podrá usarlo sin acceso a tu correo.\n')
+    estado = _enviar_smtp(para, asunto, cuerpo)
+    db.sa.session.add(Notificacion(guia=guia, para=para, asunto=asunto, cuerpo=cuerpo, estado=estado))
+    db.sa.session.commit()
+    return estado

@@ -1,4 +1,4 @@
-{# Widget del asistente Lula. Se carga en todas las páginas públicas. #}
+{# Widget del asistente Lula (texto y voz). Se carga en todas las páginas públicas. #}
 <div class="lula" id="lula" data-api="{{ url_for('asistente_mensaje') }}" data-historial="{{ url_for('asistente_historial') }}"
      data-reiniciar="{{ url_for('asistente_reiniciar') }}" data-csrf="{{ csrf_token() }}">
   <button type="button" class="lula-fab" id="lula-abrir" aria-controls="lula-panel" aria-expanded="false">
@@ -10,14 +10,20 @@
     <header class="lula-head">
       <div class="lula-avatar" aria-hidden="true"><img src="{{ url_for('static', filename='img/logo-blanco.png') }}" alt=""></div>
       <div class="flex-grow-1">
-        <h2 id="lula-titulo">Lula · Atención a clientes</h2>
-        <p><span class="lula-dot"></span> En línea · respondo en segundos</p>
+        <h2 id="lula-titulo">Lula</h2>
+        <p><span class="lula-dot"></span> <span id="lula-estado">Atención a clientes · en línea</span></p>
       </div>
+      <button type="button" class="lula-icon-btn" id="lula-voz" title="Conversar por voz (manos libres)" aria-label="Activar conversación por voz" aria-pressed="false" hidden><i class="fa-solid fa-headset"></i></button>
       <button type="button" class="lula-icon-btn" id="lula-nueva" title="Nueva conversación" aria-label="Nueva conversación"><i class="fa-solid fa-rotate-right"></i></button>
       <button type="button" class="lula-icon-btn" id="lula-cerrar" title="Cerrar" aria-label="Cerrar chat"><i class="fa-solid fa-xmark"></i></button>
     </header>
 
     <div class="lula-mensajes" id="lula-mensajes" aria-live="polite" aria-relevant="additions"></div>
+
+    <div class="lula-escuchando" id="lula-escuchando" hidden>
+      <span class="lula-ondas" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span id="lula-parcial">Te escucho…</span>
+    </div>
 
     <div class="lula-sugerencias" id="lula-sugerencias">
       <button type="button" data-texto="Quiero rastrear mi paquete">Rastrear mi paquete</button>
@@ -26,10 +32,11 @@
     </div>
 
     <form class="lula-form" id="lula-form" autocomplete="off">
+      <button type="button" class="lula-mic" id="lula-mic" aria-label="Hablar" title="Mantén la conversación por voz" hidden><i class="fa-solid fa-microphone"></i></button>
       <label for="lula-texto" class="visually-hidden">Escribe tu mensaje</label>
-      <textarea id="lula-texto" rows="1" maxlength="1000" placeholder="Escribe tu mensaje…" required></textarea>
+      <textarea id="lula-texto" rows="1" maxlength="1000" placeholder="Escribe o habla…" required></textarea>
       <button type="submit" class="lula-enviar" aria-label="Enviar"><i class="fa-solid fa-paper-plane"></i></button>
     </form>
-    <p class="lula-legal">Las conversaciones se guardan para mejorar el servicio.</p>
+    <p class="lula-legal">Las conversaciones se guardan para mejorar el servicio. Si usas el micrófono, tu navegador convierte tu voz en texto.</p>
   </section>
 </div>

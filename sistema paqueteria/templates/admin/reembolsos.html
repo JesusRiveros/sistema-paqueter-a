@@ -1,0 +1,37 @@
+{% extends 'admin/_base.html' %}
+{% block title %}Reembolsos · Operaciones Balula{% endblock %}
+{% block titulo_pagina %}Reembolsos y compensaciones{% endblock %}
+{% set etiquetas = {'aprobado_auto': ('Aprobado por Lula', 'ok'), 'pendiente': ('Pendiente', 'riesgo-medio'), 'aprobado_admin': ('Aprobado por ti', 'ok'), 'rechazado': ('Rechazado', 'riesgo-alto')} %}
+{% set estados_reembolso = {'succeeded': ('Reembolsado', 'ok'), 'pending': ('En proceso', 'riesgo-medio'), 'requires_action': ('Requiere acción', 'riesgo-medio'), 'failed': ('Falló', 'riesgo-alto'), 'canceled': ('Cancelado', 'riesgo-alto'), 'error': ('Error al reembolsar', 'riesgo-alto'), 'manual': ('Devolución manual', '')} %}
+{% block admin %}
+<div class="row g-3 mb-3">
+  {% for estado, texto in [('pendiente', 'Pendiente de aprobar'), ('aprobado_auto', 'Aprobado automáticamente'), ('aprobado_admin', 'Aprobado por el equipo')] %}
+  <div class="col-md-4"><div class="panel kpi"><span class="valor">{{ totales.get(estado, 0) | moneda }}</span><span class="etiqueta">{{ texto }} (en reembolsos)</span></div></div>
+  {% endfor %}
+</div>
+<div class="admin-nav">
+  {% for clave, nombre in [('pendiente', 'Pendientes'), ('automaticos', 'Aprobados por Lula'), ('resueltos', 'Resueltos por el equipo'), ('todos', 'Todos')] %}
+  <a href="{{ url_for('admin.reembolsos_lista', filtro=clave) }}" class="{{ 'active' if filtro == clave }}">{{ nombre }}</a>
+  {% endfor %}
+</div>
+<div class="panel p-0" style="overflow-x: auto">
+  <table class="tabla">
+    <thead><tr><th>Folio</th><th>Fecha</th><th>Guía</th><th>Problema</th><th>Resolución</th><th class="text-end">Monto</th><th>Estado</th><th>Stripe</th></tr></thead>
+    <tbody>
+    {% for c in casos %}
+      {% set et = etiquetas.get(c.estado, (c.estado, '')) %}
+      <tr>
+        <td><a class="fw-semibold" href="{{ url_for('admin.reembolso_detalle', folio=c.folio) }}">{{ c.folio }}</a></td>
+        <td class="text-nowrap">{{ c.creado.isoformat() | fecha_hora }}</td>
+        <td><a href="{{ url_for('admin.envio_detalle', guia=c.guia) }}">{{ c.guia }}</a></td>
+        <td>{{ problemas[c.problema] }}</td>
+        <td>{{ resoluciones.get(c.resolucion, '—') }}{% if c.cupon_codigo %} · {{ c.cupon_codigo }}{% endif %}</td>
+        <td class="text-end">{{ c.monto | moneda if c.monto else '—' }}</td>
+        <td><span class="pill {{ et[1] }}">{{ et[0] }}</span></td>
+        <td>{% if c.reembolso_estado %}{% set er = estados_reembolso.get(c.reembolso_estado, (c.reembolso_estado, '')) %}<span class="pill {{ er[1] }}">{{ er[0] }}</span>{% else %}—{% endif %}</td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="text-muted p-4">No hay casos con este filtro.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -243,18 +243,19 @@ def test_modelo_de_retraso():
 
 
 def test_aviso_al_destinatario_con_codigo(client, csrf, app):
-    hasta_pago(client, csrf)  # el destinatario de prueba no dejó correo: no hay aviso
+    hasta_pago(client, csrf)  # el destinatario dejó correo: recibe aviso con su código de entrega
     client.post('/app/checkout', data={'_csrf': csrf, 'resultado': 'success'})
     with app.app_context():
-        assert sa.session.query(Notificacion).count() == 0
+        aviso = sa.session.query(Notificacion).one()
+        assert aviso.para == 'destinatario@ejemplo.com' and 'código de entrega' in aviso.cuerpo
         guia = db.crear_envio(remitente={'nombre': 'A', 'ciudad': 'X', 'estado': 'Y'}, destinatario={'nombre': 'Luis Gómez'},
                               cotizacion={'total': 100, 'fecha_min': '2026-11-23', 'fecha_max': '2026-11-24', 'tipo_envio': 'eco'},
                               tipo_entrega='recolector', correo_destinatario='luis@ejemplo.com')
         import notificaciones
         with app.test_request_context():
             assert notificaciones.notificar(guia, 'creado') == 'registrado'  # sin SMTP: se registra
-        n = sa.session.query(Notificacion).one()
-        assert db.obtener_envio_modelo(guia).codigo_entrega in n.cuerpo and n.para == 'luis@ejemplo.com'
+        n = sa.session.query(Notificacion).filter_by(para='luis@ejemplo.com').one()
+        assert db.obtener_envio_modelo(guia).codigo_entrega in n.cuerpo
 
 
 def test_comando_sembrar_demo(app):
