@@ -110,6 +110,20 @@ def filtro_moneda(valor):
         return '—'
 
 
+@app.url_defaults
+def version_estaticos(endpoint, valores):
+    """Agrega ?v=<fecha de modificación> a cada archivo estático (CSS/JS).
+
+    Cloudflare y el navegador guardan los .js/.css por horas; con esto, al cambiar un archivo cambia su
+    URL y todos reciben la versión nueva al instante (sin pedirle a nadie Ctrl+F5).
+    """
+    if endpoint == 'static' and 'filename' in valores and 'v' not in valores:
+        try:
+            valores['v'] = int(os.path.getmtime(os.path.join(app.static_folder, valores['filename'])))
+        except OSError:
+            pass
+
+
 @app.context_processor
 def contexto_global():
     return {
@@ -678,6 +692,24 @@ def avanzar_envio(guia, estado, ubicacion, descripcion):
     except ValueError as e:
         raise click.ClickException(str(e))
     click.echo(f'{guia.upper()} → {estado}')
+
+
+@app.cli.command('cambiar-password')
+@click.argument('correo')
+@click.password_option('--password', prompt='Nueva contraseña', confirmation_prompt='Repítela',
+                       help='Mínimo 10 caracteres, con letras y números.')
+def cambiar_password_cli(correo, password):
+    """Pone una contraseña nueva a un usuario (admin o repartidor) y lo desbloquea."""
+    db.preparar_base(app)
+    u = db.usuario_por_correo(correo)
+    if not u:
+        raise click.ClickException(f'No existe un usuario con el correo {correo}.')
+    if len(password) < 10 or not any(c.isdigit() for c in password) or not any(c.isalpha() for c in password):
+        raise click.ClickException('La contraseña debe tener al menos 10 caracteres, con letras y números.')
+    u.fijar_password(password)
+    u.intentos_fallidos, u.bloqueado_hasta, u.activo, u.debe_cambiar_password = 0, None, True, False
+    db.sa.session.commit()
+    click.echo(f'Listo: {u.correo} ({u.rol}) ya puede entrar con su nueva contraseña.')
 
 
 @app.cli.command('respaldar-base')
