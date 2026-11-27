@@ -236,6 +236,9 @@ img { max-width: 100%; height: auto; }
 
 /* Resumen lateral */
 .summary { position: sticky; top: 92px; }
+/* En "Confirma y paga" el resumen va seguido del cupón y del botón de pagar: si el resumen se queda
+   pegado, esos elementos se deslizan por detrás de él. Ahí el resumen se desplaza con la página. */
+.pago-lateral .summary { position: static; }
 .summary-total { display: flex; justify-content: space-between; align-items: baseline; padding-top: 1rem; margin-top: .5rem; border-top: 2px dashed var(--line); }
 .summary-total .amount { font-family: var(--font-head); font-size: 2rem; font-weight: 800; color: var(--b-700); }
 .summary-total .amount.loading { opacity: .4; }

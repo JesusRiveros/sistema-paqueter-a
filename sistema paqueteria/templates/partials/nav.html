@@ -22,6 +22,10 @@
         {% if usuario_actual %}
         <a href="{{ url_for('admin.panel') if usuario_actual.rol == 'admin' else url_for('repartidor.hoy') }}" class="btn btn-ghost btn-sm">
           <i class="fa-solid fa-gauge me-1"></i> {{ 'Panel de operaciones' if usuario_actual.rol == 'admin' else 'Mis entregas' }}</a>
+        <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" title="Cerrar sesión"><i class="fa-solid fa-right-from-bracket me-1"></i> Cerrar sesión</button>
+        </form>
         {% else %}
         <a href="{{ url_for('auth.login') }}" class="btn btn-ghost btn-sm {{ 'active' if ep == 'auth.login' }}"><i class="fa-regular fa-user me-1"></i> Acceso repartidores</a>
         {% endif %}

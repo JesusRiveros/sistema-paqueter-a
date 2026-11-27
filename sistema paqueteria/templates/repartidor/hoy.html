@@ -12,10 +12,16 @@
       <h1>Hola, {{ usuario_actual.nombre.split(' ')[0] }} 👋</h1>
       <p>{{ paradas | length }} entrega{{ 's' if paradas | length != 1 }} pendiente{{ 's' if paradas | length != 1 }} · ruta estimada de {{ km_total }} km desde {{ inicio_txt }}</p>
     </div>
-    <form method="post" action="{{ url_for('repartidor.optimizar') }}">
-      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-      <button class="btn btn-primary" {{ 'disabled' if paradas | length < 2 }}><i class="fa-solid fa-wand-magic-sparkles me-1"></i> Optimizar mi ruta</button>
-    </form>
+    <div class="d-flex flex-wrap gap-2">
+      <form method="post" action="{{ url_for('repartidor.optimizar') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-primary" {{ 'disabled' if paradas | length < 2 }}><i class="fa-solid fa-wand-magic-sparkles me-1"></i> Optimizar mi ruta</button>
+      </form>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn btn-ghost"><i class="fa-solid fa-right-from-bracket me-1"></i> Cerrar sesión</button>
+      </form>
+    </div>
   </header>
 
   <div class="row g-3 mb-4">

@@ -44,7 +44,7 @@
         </ul>
       </section>
     </div>
-    <div class="col-lg-4">
+    <div class="col-lg-4 pago-lateral">
       {% include 'partials/resumen.html' %}
       <form method="post" action="{{ url_for('aplicar_cupon') }}" class="panel mt-3 py-3">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">

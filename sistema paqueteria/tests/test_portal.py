@@ -43,6 +43,14 @@ def test_login_correcto_redirige_por_rol(client, csrf, datos):
     assert entrar(client, csrf, 'PEDRO@balula.mx').location.endswith('/repartidor/')
 
 
+def test_repartidor_puede_cerrar_sesion(client, csrf, datos):
+    entrar(client, csrf, 'pedro@balula.mx')
+    html = client.get('/repartidor/').get_data(as_text=True)
+    assert 'action="/cerrar-sesion"' in html and 'Cerrar sesión' in html
+    client.post('/cerrar-sesion', data={'_csrf': csrf})
+    assert client.get('/repartidor/').status_code == 302  # ya no tiene sesión
+
+
 def test_login_incorrecto_mensaje_generico(client, csrf, datos):
     r = entrar(client, csrf, 'admin@balula.mx', 'mala')
     assert r.status_code == 401 and 'Correo o contraseña incorrectos' in r.get_data(as_text=True)
